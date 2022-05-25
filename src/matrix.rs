@@ -1,6 +1,5 @@
-use std::ptr::null_mut;
-
 use hypre_sys::*;
+use std::ptr::null_mut;
 
 pub struct CSRMatrix {
     internal_matrix: HYPRE_ParCSRMatrix,
@@ -36,5 +35,13 @@ impl CSRMatrix {
         };
 
         out
+    }
+}
+
+impl Drop for CSRMatrix {
+    fn drop(&mut self) {
+        unsafe {
+            HYPRE_ParCSRMatrixDestroy(self.internal_matrix);
+        }
     }
 }
