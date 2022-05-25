@@ -1,5 +1,7 @@
 use enum_dispatch::enum_dispatch;
 
+mod matrix;
+
 #[enum_dispatch]
 trait LinearSolver {
     fn solve(self);
