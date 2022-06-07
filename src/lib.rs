@@ -1,6 +1,7 @@
 use enum_dispatch::enum_dispatch;
 
 mod matrix;
+mod solver;
 
 #[enum_dispatch]
 trait LinearSolver {
