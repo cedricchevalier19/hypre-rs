@@ -45,6 +45,18 @@ macro_rules! set_parameter {
     }};
 }
 
+macro_rules! get_parameter {
+    ( $func:expr, $obj:expr, $t:ty ) => {{
+        let mut p_t: $t = Default::default();
+        let err = unsafe { $func($obj, &mut p_t) };
+        if err != 0 {
+            None
+        } else {
+            Some(p_t.try_into().unwrap())
+        }
+    }};
+}
+
 impl PCGSolver {
     fn check_hypre_error(self, err: i32) -> Option<PCGSolver> {
         if err != 0 {
@@ -54,10 +66,16 @@ impl PCGSolver {
         }
     }
 
-    pub fn new(config: PCGSolverConfig) -> Option<Self> {
+    pub fn new(comm: MPI_Comm, config: PCGSolverConfig) -> Option<Self> {
         let mut solver = PCGSolver {
             internal_solver: null_mut(),
         };
+        unsafe {
+            let h_solver = &mut solver.internal_solver as *mut _ as *mut HYPRE_Solver;
+            if HYPRE_ParCSRPCGCreate(comm, h_solver) != 0 {
+                return None;
+            }
+        }
         solver.config(config)
     }
 
@@ -108,5 +126,57 @@ impl PCGSolver {
         ];
 
         Some(self)
+    }
+
+    pub fn current_config(&self) -> PCGSolverConfig {
+        let mut config: PCGSolverConfig = Default::default();
+
+        config.generic.tol = get_parameter![HYPRE_PCGGetTol, self.internal_solver, HYPRE_Real];
+        config.generic.res_tol =
+            get_parameter![HYPRE_PCGGetResidualTol, self.internal_solver, HYPRE_Real];
+        config.generic.abs_tol_fact = get_parameter![
+            HYPRE_PCGGetAbsoluteTolFactor,
+            self.internal_solver,
+            HYPRE_Real
+        ];
+        config.generic.max_iters =
+            get_parameter![HYPRE_PCGGetMaxIter, self.internal_solver, HYPRE_Int];
+        config.generic.two_norm =
+            get_parameter![HYPRE_PCGGetTwoNorm, self.internal_solver, HYPRE_Int]
+                .map(|v: HYPRE_Int| v != 0);
+        config.generic.rel_change =
+            get_parameter![HYPRE_PCGGetRelChange, self.internal_solver, HYPRE_Int]
+                .map(|v: HYPRE_Int| v != 0);
+        config
+    }
+
+    pub fn solve(&self, mat: HYPRE_Matrix, rhs: HYPRE_Vector, x: HYPRE_Vector) {
+        unsafe {
+            HYPRE_PCGSolve(self.internal_solver, mat, rhs, x);
+        }
+    }
+}
+
+impl Drop for PCGSolver {
+    fn drop(&mut self) {
+        unsafe {
+            HYPRE_ParCSRPCGDestroy(self.internal_solver);
+        }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    #[test]
+    fn config_test() {
+        let MPI_COMM_WORLD = unsafe {
+            MPI_Init(null_mut(), null_mut());
+            &mut ompi_mpi_comm_world as *mut _ as MPI_Comm
+        };
+        let solver = PCGSolver::new(MPI_COMM_WORLD, Default::default()).unwrap();
+
+        let parameters = solver.current_config();
+        println!("{:?}", parameters);
     }
 }
