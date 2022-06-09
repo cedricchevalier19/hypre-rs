@@ -11,3 +11,8 @@ edition = "2021"
 [dependencies]
 enum_dispatch = "0.3"
 hypre-sys = {path="hypre-sys", version= "0.1"}
+mpi = { version = "0.6", features = [] }
+
+[patch.crates-io]
+mpi = {path = "rsmpi"}
+mpi-sys = {path = "rsmpi/mpi-sys" }

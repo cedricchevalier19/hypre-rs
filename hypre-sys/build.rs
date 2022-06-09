@@ -21,10 +21,13 @@ fn main() {
         // The input header we would like to generate
         // bindings for.
         .header("wrapper.h")
-        .clang_args(&["-I/usr/include/hypre",
+        .clang_args(&[
+            "-I/usr/include/hypre",
             "-I/usr/lib/x86_64-linux-gnu/openmpi/include",
-            "-I/usr/lib/x86_64-linux-gnu/openmpi/include/openmpi"]
-        )
+            "-I/usr/lib/x86_64-linux-gnu/openmpi/include/openmpi",
+        ])
+        // There is no need to make bindings for mpi types as that has already been done in the mpi crate
+        .blocklist_item("(O?MPI|o?mpi)[\\w_]*")
         // Tell cargo to invalidate the built crate whenever any of the
         // included header files changed.
         .parse_callbacks(Box::new(bindgen::CargoCallbacks))

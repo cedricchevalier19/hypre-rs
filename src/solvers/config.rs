@@ -15,8 +15,8 @@ pub struct GenericIterativeSolverConfig {
 
 impl GenericIterativeSolverConfig {
     pub fn validate(&self) -> bool {
-        let mut check = self.tol.map_or_else(|| false, |x| x > 0.0);
-        check &= self.abs_tol.map_or_else(|| false, |x| x > 0.0);
+        let mut check = self.tol.map_or_else(|| true, |x| x > 0.0);
+        check &= self.abs_tol.map_or_else(|| true, |x| x > 0.0);
         check
     }
 }

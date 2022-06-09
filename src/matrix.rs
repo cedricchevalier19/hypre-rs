@@ -1,4 +1,5 @@
 use hypre_sys::*;
+use mpi::topology::Communicator;
 use std::{ffi::c_void, ptr::null_mut};
 
 pub struct CSRMatrix {
@@ -7,7 +8,7 @@ pub struct CSRMatrix {
 
 impl CSRMatrix {
     pub fn new(
-        comm: MPI_Comm,
+        comm: impl Communicator,
         global_num_rows: usize,
         global_num_cols: usize,
         row_starts: &[usize],
@@ -22,7 +23,7 @@ impl CSRMatrix {
             col_starts.iter().map(|&x| x.try_into().unwrap()).collect();
         unsafe {
             HYPRE_ParCSRMatrixCreate(
-                comm,
+                comm.as_raw(),
                 global_num_rows.try_into().unwrap(),
                 global_num_cols.try_into().unwrap(),
                 h_row_starts.as_mut_ptr(),

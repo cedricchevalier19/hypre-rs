@@ -2,6 +2,11 @@ use std::ptr::{null, null_mut};
 
 use super::GenericIterativeSolverConfig;
 use hypre_sys::*;
+use mpi::{
+    topology::{AsCommunicator, SystemCommunicator},
+    traits::AsRaw,
+    *,
+};
 
 pub struct PCGSolver {
     internal_solver: HYPRE_Solver,
@@ -29,7 +34,7 @@ impl PCGSolverConfig {
         if let Some(p) = self.recompute_residual_period {
             p > 0 && self.generic.validate()
         } else {
-            false
+            self.generic.validate()
         }
     }
 }
@@ -66,13 +71,13 @@ impl PCGSolver {
         }
     }
 
-    pub fn new(comm: MPI_Comm, config: PCGSolverConfig) -> Option<Self> {
+    pub fn new(comm: impl topology::Communicator, config: PCGSolverConfig) -> Option<Self> {
         let mut solver = PCGSolver {
             internal_solver: null_mut(),
         };
         unsafe {
             let h_solver = &mut solver.internal_solver as *mut _ as *mut HYPRE_Solver;
-            if HYPRE_ParCSRPCGCreate(comm, h_solver) != 0 {
+            if HYPRE_ParCSRPCGCreate(comm.as_raw(), h_solver) != 0 {
                 return None;
             }
         }
@@ -167,14 +172,13 @@ impl Drop for PCGSolver {
 
 #[cfg(test)]
 mod tests {
+    use mpi::traits::AsRaw;
+
     use super::*;
     #[test]
     fn config_test() {
-        let MPI_COMM_WORLD = unsafe {
-            MPI_Init(null_mut(), null_mut());
-            &mut ompi_mpi_comm_world as *mut _ as MPI_Comm
-        };
-        let solver = PCGSolver::new(MPI_COMM_WORLD, Default::default()).unwrap();
+        let universe = mpi::initialize().unwrap();
+        let solver = PCGSolver::new(universe.world(), Default::default()).unwrap();
 
         let parameters = solver.current_config();
         println!("{:?}", parameters);
