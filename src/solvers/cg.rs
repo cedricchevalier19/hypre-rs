@@ -1,12 +1,8 @@
-use std::ptr::{null, null_mut};
+use std::ptr::null_mut;
 
 use super::GenericIterativeSolverConfig;
 use hypre_sys::*;
-use mpi::{
-    topology::{AsCommunicator, SystemCommunicator},
-    traits::AsRaw,
-    *,
-};
+use mpi;
 
 pub struct PCGSolver {
     internal_solver: HYPRE_Solver,
@@ -71,7 +67,7 @@ impl PCGSolver {
         }
     }
 
-    pub fn new(comm: impl topology::Communicator, config: PCGSolverConfig) -> Option<Self> {
+    pub fn new(comm: impl mpi::topology::Communicator, config: PCGSolverConfig) -> Option<Self> {
         let mut solver = PCGSolver {
             internal_solver: null_mut(),
         };
@@ -172,8 +168,6 @@ impl Drop for PCGSolver {
 
 #[cfg(test)]
 mod tests {
-    use mpi::traits::AsRaw;
-
     use super::*;
     #[test]
     fn config_test() {
