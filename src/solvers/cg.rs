@@ -8,7 +8,7 @@ pub struct PCGSolver {
     internal_solver: HYPRE_Solver,
 }
 
-#[derive(Default, Debug)]
+#[derive(Default, Debug, Clone)]
 pub struct PCGSolverConfig {
     pub generic: GenericIterativeSolverConfig,
     pub recompute_residual: Option<bool>,
@@ -176,5 +176,22 @@ mod tests {
 
         let parameters = solver.current_config();
         println!("{:?}", parameters);
+
+        let my_parameters = PCGSolverConfig {
+            generic: GenericIterativeSolverConfig {
+                tol: Some(1e-9),
+                max_iters: Some(500),
+                two_norm: Some(true),
+                .. Default::default()
+            },
+            recompute_residual: None,
+            recompute_residual_period: Some(8)
+        };
+        let solver = PCGSolver::new(universe.world(), my_parameters.clone()).unwrap();
+        let parameters = solver.current_config();
+        println!("{:?}", parameters);
+        assert_eq!(my_parameters.generic.tol, parameters.generic.tol);
+        assert_eq!(my_parameters.generic.max_iters, parameters.generic.max_iters);
+        assert_eq!(my_parameters.generic.two_norm, parameters.generic.two_norm);
     }
 }

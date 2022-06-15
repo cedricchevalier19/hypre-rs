@@ -1,4 +1,4 @@
-#[derive(Default, Debug)]
+#[derive(Default, Debug, Clone)]
 pub struct GenericIterativeSolverConfig {
     pub tol: Option<f64>,
     pub abs_tol: Option<f64>,
