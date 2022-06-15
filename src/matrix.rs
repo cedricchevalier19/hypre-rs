@@ -63,3 +63,45 @@ impl From<IJMatrix> for CSRMatrix {
         out
     }
 }
+
+impl IJMatrix {
+    pub fn new(
+        comm: impl mpi::topology::Communicator,
+        rows: (usize, usize),
+        cols: (usize, usize),
+    ) -> Result<Self, String> {
+        let mut out = Self {
+            internal_matrix: null_mut(),
+        };
+        unsafe {
+            let h_matrix = &mut out.internal_matrix as *mut _ as *mut HYPRE_IJMatrix;
+            if HYPRE_IJMatrixCreate(
+                comm.as_raw(),
+                rows.0.try_into().unwrap(),
+                rows.1.try_into().unwrap(),
+                cols.0.try_into().unwrap(),
+                cols.1.try_into().unwrap(),
+                h_matrix,
+            ) != 0
+            {
+                return Err("Cannot create matrix".to_string());
+            }
+
+            if HYPRE_IJMatrixSetObjectType(*h_matrix, 0) != 0 {
+                return Err("Cannot create matrix".to_string());
+            }
+            if HYPRE_IJMatrixInitialize(*h_matrix) != 0 {
+                return Err("Cannot create matrix".to_string());
+            }
+        }
+        Ok(out)
+    }
+}
+
+impl Drop for IJMatrix {
+    fn drop(&mut self) {
+        unsafe {
+            HYPRE_IJMatrixDestroy(self.internal_matrix);
+        }
+    }
+}

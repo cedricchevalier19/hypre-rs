@@ -37,12 +37,11 @@ macro_rules! check_positive_parameter {
                 return Err("parameter must be positive".to_string());
             }
         }
-    }}
+    }};
 }
 
 impl PCGSolverConfigBuilder {
-    fn validate(&self) -> Result<(), String>
-    {
+    fn validate(&self) -> Result<(), String> {
         check_positive_parameter![self, tol];
         check_positive_parameter![self, abs_tol];
         check_positive_parameter![self, res_tol];
