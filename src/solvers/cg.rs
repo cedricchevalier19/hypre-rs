@@ -1,6 +1,9 @@
+extern crate derive_builder;
+
+use derive_builder::Builder;
+
 use std::ptr::null_mut;
 
-use super::GenericIterativeSolverConfig;
 use hypre_sys::*;
 use mpi;
 
@@ -8,30 +11,43 @@ pub struct PCGSolver {
     internal_solver: HYPRE_Solver,
 }
 
-#[derive(Default, Debug, Clone)]
+#[derive(Default, Debug, Clone, Builder)]
+#[builder(setter(into, strip_option), default)]
+#[builder(build_fn(validate = "Self::validate"))]
 pub struct PCGSolverConfig {
-    pub generic: GenericIterativeSolverConfig,
+    pub tol: Option<f64>,
+    pub abs_tol: Option<f64>,
+    pub res_tol: Option<f64>,
+    pub abs_tol_fact: Option<f64>,
+    pub conv_tol_fact: Option<f64>,
+    pub stop_crit: Option<usize>,
+    pub max_iters: Option<usize>,
+    pub two_norm: Option<bool>,
+    pub rel_change: Option<bool>,
+    pub logging: Option<u32>,
+    pub print_level: Option<u32>,
     pub recompute_residual: Option<bool>,
     pub recompute_residual_period: Option<usize>,
 }
 
-impl From<GenericIterativeSolverConfig> for PCGSolverConfig {
-    fn from(generic: GenericIterativeSolverConfig) -> Self {
-        PCGSolverConfig {
-            generic,
-            recompute_residual: None,
-            recompute_residual_period: None,
+macro_rules! check_positive_parameter {
+    ( $obj:expr, $param:ident) => {{
+        if let Some(Some($param)) = $obj.$param {
+            if $param < 0.into() {
+                return Err("parameter must be positive".to_string());
+            }
         }
-    }
+    }}
 }
 
-impl PCGSolverConfig {
-    pub fn validate(&self) -> bool {
-        if let Some(p) = self.recompute_residual_period {
-            p > 0 && self.generic.validate()
-        } else {
-            self.generic.validate()
-        }
+impl PCGSolverConfigBuilder {
+    fn validate(&self) -> Result<(), String>
+    {
+        check_positive_parameter![self, tol];
+        check_positive_parameter![self, abs_tol];
+        check_positive_parameter![self, res_tol];
+        check_positive_parameter![self, conv_tol_fact];
+        Ok(())
     }
 }
 
@@ -81,39 +97,28 @@ impl PCGSolver {
     }
 
     pub fn config(self, config: PCGSolverConfig) -> Option<Self> {
-        if !config.validate() {
-            return None;
-        }
-        set_parameter![HYPRE_PCGSetTol, self.internal_solver, config.generic.tol];
+        set_parameter![HYPRE_PCGSetTol, self.internal_solver, config.tol];
         set_parameter![
             HYPRE_PCGSetAbsoluteTol,
             self.internal_solver,
-            config.generic.abs_tol
+            config.abs_tol
         ];
         set_parameter![
             HYPRE_PCGSetResidualTol,
             self.internal_solver,
-            config.generic.res_tol
+            config.res_tol
         ];
         set_parameter![
             HYPRE_PCGSetAbsoluteTolFactor,
             self.internal_solver,
-            config.generic.abs_tol_fact
+            config.abs_tol_fact
         ];
-        set_parameter![
-            HYPRE_PCGSetMaxIter,
-            self.internal_solver,
-            config.generic.max_iters
-        ];
-        set_parameter![
-            HYPRE_PCGSetTwoNorm,
-            self.internal_solver,
-            config.generic.two_norm
-        ];
+        set_parameter![HYPRE_PCGSetMaxIter, self.internal_solver, config.max_iters];
+        set_parameter![HYPRE_PCGSetTwoNorm, self.internal_solver, config.two_norm];
         set_parameter![
             HYPRE_PCGSetRelChange,
             self.internal_solver,
-            config.generic.rel_change
+            config.rel_change
         ];
         set_parameter![
             HYPRE_PCGSetRecomputeResidual,
@@ -132,22 +137,18 @@ impl PCGSolver {
     pub fn current_config(&self) -> PCGSolverConfig {
         let mut config: PCGSolverConfig = Default::default();
 
-        config.generic.tol = get_parameter![HYPRE_PCGGetTol, self.internal_solver, HYPRE_Real];
-        config.generic.res_tol =
-            get_parameter![HYPRE_PCGGetResidualTol, self.internal_solver, HYPRE_Real];
-        config.generic.abs_tol_fact = get_parameter![
+        config.tol = get_parameter![HYPRE_PCGGetTol, self.internal_solver, HYPRE_Real];
+        config.res_tol = get_parameter![HYPRE_PCGGetResidualTol, self.internal_solver, HYPRE_Real];
+        config.abs_tol_fact = get_parameter![
             HYPRE_PCGGetAbsoluteTolFactor,
             self.internal_solver,
             HYPRE_Real
         ];
-        config.generic.max_iters =
-            get_parameter![HYPRE_PCGGetMaxIter, self.internal_solver, HYPRE_Int];
-        config.generic.two_norm =
-            get_parameter![HYPRE_PCGGetTwoNorm, self.internal_solver, HYPRE_Int]
-                .map(|v: HYPRE_Int| v != 0);
-        config.generic.rel_change =
-            get_parameter![HYPRE_PCGGetRelChange, self.internal_solver, HYPRE_Int]
-                .map(|v: HYPRE_Int| v != 0);
+        config.max_iters = get_parameter![HYPRE_PCGGetMaxIter, self.internal_solver, HYPRE_Int];
+        config.two_norm = get_parameter![HYPRE_PCGGetTwoNorm, self.internal_solver, HYPRE_Int]
+            .map(|v: HYPRE_Int| v != 0);
+        config.rel_change = get_parameter![HYPRE_PCGGetRelChange, self.internal_solver, HYPRE_Int]
+            .map(|v: HYPRE_Int| v != 0);
         config
     }
 
@@ -177,21 +178,18 @@ mod tests {
         let parameters = solver.current_config();
         println!("{:?}", parameters);
 
-        let my_parameters = PCGSolverConfig {
-            generic: GenericIterativeSolverConfig {
-                tol: Some(1e-9),
-                max_iters: Some(500),
-                two_norm: Some(true),
-                .. Default::default()
-            },
-            recompute_residual: None,
-            recompute_residual_period: Some(8)
-        };
+        let my_parameters = PCGSolverConfigBuilder::default()
+            .tol(1e-9)
+            .max_iters(500usize)
+            .two_norm(true)
+            .recompute_residual_period(8usize)
+            .build()
+            .unwrap();
         let solver = PCGSolver::new(universe.world(), my_parameters.clone()).unwrap();
         let parameters = solver.current_config();
         println!("{:?}", parameters);
-        assert_eq!(my_parameters.generic.tol, parameters.generic.tol);
-        assert_eq!(my_parameters.generic.max_iters, parameters.generic.max_iters);
-        assert_eq!(my_parameters.generic.two_norm, parameters.generic.two_norm);
+        assert_eq!(my_parameters.tol, parameters.tol);
+        assert_eq!(my_parameters.max_iters, parameters.max_iters);
+        assert_eq!(my_parameters.two_norm, parameters.two_norm);
     }
 }

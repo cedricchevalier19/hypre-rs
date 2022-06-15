@@ -9,6 +9,7 @@ edition = "2021"
 # See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
 
 [dependencies]
+derive_builder = "0.11"
 enum_dispatch = "0.3"
 hypre-sys = {path="hypre-sys", version= "0.1"}
 mpi = { version = "0.6", features = [] }
