@@ -1,5 +1,6 @@
 use enum_dispatch::enum_dispatch;
 
+mod error;
 mod matrix;
 mod solvers;
 
