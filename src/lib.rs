@@ -2,7 +2,7 @@ use enum_dispatch::enum_dispatch;
 
 mod error;
 mod matrix;
-mod solvers;
+pub mod solvers;
 
 #[enum_dispatch]
 trait LinearSolver {
