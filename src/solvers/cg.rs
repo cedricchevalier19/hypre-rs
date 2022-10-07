@@ -22,9 +22,9 @@ pub struct PCGSolver {
 /// ## Convergence criteria
 ///
 /// According to hypre source code, default is
-/// $$<C*r, r> \leq \max (abs_tol^2, tol^2 * <C*b, b>)$$
+/// $$<C*r, r>  < \text{max}({\text{tol}_a^2, tol^2 * <C*b, b>)$$
 ///
-/// If res_tol is set, $$||r_new - r_old||_C < res_tol ||b||_C$$ is used.
+/// If res_tol is set, $$||r_\text{new} - r_\text{old}||_C < \text{tol}_r * ||b||_C$$ is used.
 ///
 /// If two_norm is set, $$||.||_2$$ norm is used.
 #[derive(Default, Debug, Clone, Builder)]
@@ -51,6 +51,27 @@ pub struct PCGSolverConfig {
     pub recompute_residual: Option<bool>,
     /// Periodically recompute an explicit residual
     pub recompute_residual_period: Option<usize>,
+}
+
+macro_rules! check_positive_parameter {
+    ( $obj:expr, $param:ident) => {{
+        if let Some(Some($param)) = $obj.$param {
+            if $param < 0.into() {
+                return Err("parameter must be positive".to_string());
+            }
+        }
+    }};
+}
+
+impl PCGSolverConfigBuilder {
+    /// Validates valid parameters for [PCGSolverConfig]
+    fn validate(&self) -> Result<(), String> {
+        check_positive_parameter![self, tol];
+        check_positive_parameter![self, abs_tol];
+        check_positive_parameter![self, res_tol];
+        check_positive_parameter![self, conv_tol_fact];
+        Ok(())
+    }
 }
 
 /// Preconditioned Conjugate Gradient solver
