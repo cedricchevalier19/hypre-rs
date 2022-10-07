@@ -10,6 +10,7 @@ use crate::error::HypreError;
 use crate::solvers::{IterativeSolverStatus, LinearSolver};
 
 use crate::matrix::Matrix;
+use crate::HypreResult;
 use hypre_sys::*;
 use mpi;
 
@@ -91,7 +92,7 @@ impl PCGSolver {
     pub fn new(
         comm: impl mpi::topology::Communicator,
         config: PCGSolverConfig,
-    ) -> Result<Self, HypreError> {
+    ) -> HypreResult<Self> {
         let mut solver = PCGSolver {
             internal_solver: null_mut(),
         };
@@ -106,7 +107,7 @@ impl PCGSolver {
     }
 
     /// Change the configuration of the solver
-    pub fn config(self, config: PCGSolverConfig) -> Result<Self, HypreError> {
+    pub fn config(self, config: PCGSolverConfig) -> HypreResult<Self> {
         set_parameter![HYPRE_PCGSetTol, self.internal_solver, config.tol];
         set_parameter![
             HYPRE_PCGSetAbsoluteTol,
@@ -140,7 +141,7 @@ impl PCGSolver {
     }
 
     /// Return the configuration of the solver
-    pub fn current_config(&self) -> Result<PCGSolverConfig, HypreError> {
+    pub fn current_config(&self) -> HypreResult<PCGSolverConfig> {
         let mut config: PCGSolverConfig = Default::default();
 
         config.tol = get_parameter![HYPRE_PCGGetTol, self.internal_solver, HYPRE_Real]?;
@@ -173,7 +174,7 @@ impl LinearSolver for PCGSolver {
         mat: Matrix,
         rhs: HYPRE_Vector,
         x: HYPRE_Vector,
-    ) -> Result<IterativeSolverStatus, HypreError> {
+    ) -> HypreResult<IterativeSolverStatus> {
         unsafe {
             match HYPRE_PCGSolve(self.internal_solver, mat.get_internal_matrix()?, rhs, x) {
                 0 => {

@@ -1,5 +1,6 @@
 use crate::error::HypreError;
 use crate::matrix::Matrix::{ParCSR, IJ};
+use crate::HypreResult;
 use hypre_sys::*;
 use mpi::topology::Communicator;
 use std::{ffi::c_void, ptr::null_mut};
@@ -15,7 +16,7 @@ impl CSRMatrix {
         global_num_cols: usize,
         row_starts: &[usize],
         col_starts: &[usize],
-    ) -> Result<Self, HypreError> {
+    ) -> HypreResult<Self> {
         let mut out = CSRMatrix {
             internal_matrix: null_mut(),
         };
@@ -41,7 +42,7 @@ impl CSRMatrix {
         }
     }
 
-    fn get_internal_matrix(self) -> Result<HYPRE_Matrix, HypreError> {
+    fn get_internal_matrix(self) -> HypreResult<HYPRE_Matrix> {
         Ok(self.internal_matrix as HYPRE_Matrix)
     }
 }
@@ -79,7 +80,7 @@ impl IJMatrix {
         comm: impl mpi::topology::Communicator,
         rows: (usize, usize),
         cols: (usize, usize),
-    ) -> Result<Self, HypreError> {
+    ) -> HypreResult<Self> {
         let mut out = Self {
             internal_matrix: null_mut(),
         };
@@ -115,7 +116,7 @@ pub enum Matrix {
 }
 
 impl Matrix {
-    pub(crate) fn get_internal_matrix(self) -> Result<HYPRE_Matrix, HypreError> {
+    pub(crate) fn get_internal_matrix(self) -> HypreResult<HYPRE_Matrix> {
         match self {
             IJ(m) => <IJMatrix as TryInto<CSRMatrix>>::try_into(m)?.get_internal_matrix(),
             ParCSR(m) => m.get_internal_matrix(),

@@ -28,6 +28,7 @@ use std::fmt::Formatter;
 
 use crate::error::HypreError;
 use crate::matrix::Matrix;
+use crate::HypreResult;
 pub use cg::PCGSolver;
 pub use cg::PCGSolverConfig;
 
@@ -67,7 +68,7 @@ pub trait LinearSolver {
         mat: Matrix,
         rhs: HYPRE_Vector,
         x: HYPRE_Vector,
-    ) -> Result<IterativeSolverStatus, HypreError>;
+    ) -> HypreResult<IterativeSolverStatus>;
 }
 
 #[enum_dispatch(LinearSolver)]
