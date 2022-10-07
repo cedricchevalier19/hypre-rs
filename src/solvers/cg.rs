@@ -53,50 +53,6 @@ pub struct PCGSolverConfig {
     pub recompute_residual_period: Option<usize>,
 }
 
-macro_rules! check_positive_parameter {
-    ( $obj:expr, $param:ident) => {{
-        if let Some(Some($param)) = $obj.$param {
-            if $param < 0.into() {
-                return Err("parameter must be positive".to_string());
-            }
-        }
-    }};
-}
-
-impl PCGSolverConfigBuilder {
-    /// Validates valid parameters for [PCGSolverConfig]
-    fn validate(&self) -> Result<(), String> {
-        check_positive_parameter![self, tol];
-        check_positive_parameter![self, abs_tol];
-        check_positive_parameter![self, res_tol];
-        check_positive_parameter![self, conv_tol_fact];
-        Ok(())
-    }
-}
-
-macro_rules! set_parameter {
-    ( $func:expr, $obj:expr, $param:expr ) => {{
-        if let Some(p_value) = $param {
-            let err = unsafe { $func($obj, p_value.try_into().unwrap()) };
-            if err != 0 {
-                return Err(HypreError::new(err));
-            }
-        }
-    }};
-}
-
-macro_rules! get_parameter {
-    ( $func:expr, $obj:expr, $t:ty ) => {{
-        let mut p_t: $t = Default::default();
-        let err = unsafe { $func($obj, &mut p_t) };
-        if err != 0 {
-            Err(HypreError::new(err))
-        } else {
-            Ok(p_t.try_into().unwrap())
-        }
-    }};
-}
-
 /// Preconditioned Conjugate Gradient solver
 ///
 /// # Example
