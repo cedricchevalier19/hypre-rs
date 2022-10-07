@@ -7,7 +7,7 @@ use std::fmt::Formatter;
 use std::ptr::null_mut;
 
 use crate::error::HypreError;
-use crate::solvers::IterativeSolverStatus;
+use crate::solvers::{IterativeSolverStatus, LinearSolver};
 
 use crate::matrix::Matrix;
 use hypre_sys::*;
@@ -160,13 +160,15 @@ impl PCGSolver {
         config.rel_change = Some(boolean != 0);
         Ok(config)
     }
+}
 
+impl LinearSolver for PCGSolver {
     /// Solves a linear system using Preconditioned Conjugate Gradient algorithm.
     ///
     /// # Panics
     /// This function can panic if number of iterations returned by hypre is negative.
     ///
-    pub fn solve(
+    fn solve(
         &self,
         mat: Matrix,
         rhs: HYPRE_Vector,
