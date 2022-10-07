@@ -3,6 +3,7 @@ use crate::matrix::Matrix::{ParCSR, IJ};
 use crate::HypreResult;
 use hypre_sys::*;
 use mpi::topology::Communicator;
+use std::num::TryFromIntError;
 use std::{ffi::c_void, ptr::null_mut};
 
 pub struct CSRMatrix {
@@ -20,15 +21,19 @@ impl CSRMatrix {
         let mut out = CSRMatrix {
             internal_matrix: null_mut(),
         };
-        let mut h_row_starts: Vec<HYPRE_BigInt> =
-            row_starts.iter().map(|&x| x.try_into().unwrap()).collect();
-        let mut h_col_starts: Vec<HYPRE_BigInt> =
-            col_starts.iter().map(|&x| x.try_into().unwrap()).collect();
+        let mut h_row_starts = row_starts
+            .iter()
+            .map(|&x| x.try_into())
+            .collect::<Result<Vec<HYPRE_BigInt>, TryFromIntError>>()?;
+        let mut h_col_starts: Vec<HYPRE_BigInt> = col_starts
+            .iter()
+            .map(|&x| x.try_into())
+            .collect::<Result<Vec<HYPRE_BigInt>, TryFromIntError>>()?;
         unsafe {
             match HYPRE_ParCSRMatrixCreate(
                 comm.as_raw(),
-                global_num_rows.try_into().unwrap(),
-                global_num_cols.try_into().unwrap(),
+                global_num_rows.try_into()?,
+                global_num_cols.try_into()?,
                 h_row_starts.as_mut_ptr(),
                 h_col_starts.as_mut_ptr(),
                 0,
@@ -88,10 +93,10 @@ impl IJMatrix {
             let h_matrix = &mut out.internal_matrix as *mut _ as *mut HYPRE_IJMatrix;
             check_hypre!(HYPRE_IJMatrixCreate(
                 comm.as_raw(),
-                rows.0.try_into().unwrap(),
-                rows.1.try_into().unwrap(),
-                cols.0.try_into().unwrap(),
-                cols.1.try_into().unwrap(),
+                rows.0.try_into()?,
+                rows.1.try_into()?,
+                cols.0.try_into()?,
+                cols.1.try_into()?,
                 h_matrix,
             ));
 

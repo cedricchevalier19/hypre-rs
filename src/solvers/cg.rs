@@ -1,8 +1,6 @@
 extern crate derive_builder;
 
 use derive_builder::Builder;
-use std::fmt;
-use std::fmt::Formatter;
 
 use std::ptr::null_mut;
 
@@ -31,7 +29,7 @@ pub struct PCGSolver {
 /// If two_norm is set, $$||.||_2$$ norm is used.
 #[derive(Default, Debug, Clone, Builder)]
 #[builder(setter(into, strip_option), default)]
-#[builder(build_fn(validate = "Self::validate"))]
+#[builder(build_fn(validate = "Self::validate", error = "HypreError"))]
 pub struct PCGSolverConfig {
     /// Relative convergence tolerance
     pub tol: Option<f64>,
@@ -59,7 +57,7 @@ macro_rules! check_positive_parameter {
     ( $obj:expr, $param:ident) => {{
         if let Some(Some($param)) = $obj.$param {
             if $param < 0.into() {
-                return Err("parameter must be positive".to_string());
+                return Err(HypreError::InvalidParameterPositive);
             }
         }
     }};
@@ -67,7 +65,7 @@ macro_rules! check_positive_parameter {
 
 impl PCGSolverConfigBuilder {
     /// Validates valid parameters for [PCGSolverConfig]
-    fn validate(&self) -> Result<(), String> {
+    fn validate(&self) -> HypreResult<()> {
         check_positive_parameter![self, tol];
         check_positive_parameter![self, abs_tol];
         check_positive_parameter![self, res_tol];
@@ -189,7 +187,7 @@ impl LinearSolver for PCGSolver {
                     let mut num_iters: HYPRE_Int = 0.into();
                     HYPRE_PCGGetNumIterations(self.internal_solver, &mut num_iters as *mut _);
                     Ok(IterativeSolverStatus {
-                        num_iters: num_iters.try_into().unwrap(),
+                        num_iters: num_iters.try_into()?,
                         res_num: res_norm.into(),
                         converged: (converged != 0),
                     })

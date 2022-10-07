@@ -26,7 +26,6 @@ mod cg;
 use std::fmt;
 use std::fmt::Formatter;
 
-use crate::error::HypreError;
 use crate::matrix::Matrix;
 use crate::HypreResult;
 pub use cg::PCGSolver;

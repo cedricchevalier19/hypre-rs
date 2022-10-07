@@ -1,7 +1,9 @@
 use crate::error::HypreError::{
     HypreArgError, HypreConvError, HypreGenericError, HypreMemoryError, UnknowError,
 };
+use crate::HypreError::ConversionError;
 use hypre_sys::{HYPRE_ClearError, HYPRE_GetErrorArg, HYPRE_Int};
+use std::num::TryFromIntError;
 use thiserror::Error;
 
 #[derive(Debug, Error)]
@@ -18,18 +20,22 @@ pub enum HypreError {
     MpiError,
     #[error("Unknown error")]
     UnknowError,
+    #[error("Invalid parameter, should be positive")]
+    InvalidParameterPositive,
     #[error(transparent)]
-    Other(#[from] anyhow::Error), // source and Display delegate to anyhow::Error
+    ConversionError(#[from] TryFromIntError),
 }
 
 impl HypreError {
     pub(crate) fn new(error_num: HYPRE_Int) -> Self {
         let out = match error_num as u32 {
             hypre_sys::HYPRE_ERROR_MEMORY => HypreMemoryError,
-            hypre_sys::HYPRE_ERROR_ARG => {
-                let argnum = unsafe { HYPRE_GetErrorArg().try_into().unwrap() };
-                HypreArgError(argnum)
-            }
+            hypre_sys::HYPRE_ERROR_ARG => unsafe {
+                match HYPRE_GetErrorArg().try_into() {
+                    Ok(argnum) => HypreArgError(argnum),
+                    Err(e) => ConversionError(e),
+                }
+            },
             hypre_sys::HYPRE_ERROR_CONV => HypreConvError,
             hypre_sys::HYPRE_ERROR_GENERIC => HypreGenericError,
             _ => UnknowError,
