@@ -30,6 +30,7 @@ use crate::matrix::Matrix;
 use crate::HypreResult;
 pub use cg::PCGSolver;
 pub use cg::PCGSolverConfig;
+pub use cg::PCGSolverConfigBuilder;
 
 /// Solver status information
 #[derive(Debug, Clone)]
@@ -71,7 +72,7 @@ pub trait LinearSolver {
 }
 
 #[enum_dispatch(LinearSolver)]
-enum Solver {
+pub enum Solver {
     CG(PCGSolver),
 }
 
