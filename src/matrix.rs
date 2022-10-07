@@ -6,6 +6,7 @@ use mpi::topology::Communicator;
 use std::num::TryFromIntError;
 use std::{ffi::c_void, ptr::null_mut};
 
+#[derive(Debug, Clone)]
 pub struct CSRMatrix {
     internal_matrix: HYPRE_ParCSRMatrix,
 }
@@ -60,6 +61,7 @@ impl Drop for CSRMatrix {
     }
 }
 
+#[derive(Debug)]
 pub struct IJMatrix {
     internal_matrix: HYPRE_IJMatrix,
 }
@@ -123,6 +125,7 @@ impl Drop for IJMatrix {
 /// Matrix datatype
 ///
 /// This type is generic, to handle the different hypre implementations
+#[derive(Debug)]
 pub enum Matrix {
     /// IJ matrix, defined algebraically
     IJ(IJMatrix),

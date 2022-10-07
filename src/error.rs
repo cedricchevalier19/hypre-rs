@@ -6,7 +6,7 @@ use hypre_sys::{HYPRE_ClearError, HYPRE_GetErrorArg, HYPRE_Int};
 use std::num::TryFromIntError;
 use thiserror::Error;
 
-#[derive(Debug, Error)]
+#[derive(Debug, Error, Copy, Clone)]
 pub enum HypreError {
     #[error("Hypre internal HYPRE_ERROR_GENERIC")]
     HypreGenericError,

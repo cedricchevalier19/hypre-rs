@@ -13,6 +13,7 @@ use hypre_sys::*;
 use mpi;
 
 /// Access to hypre Conjugate Gradient solver
+#[derive(Debug)]
 pub struct PCGSolver {
     internal_solver: HYPRE_Solver,
 }
@@ -27,7 +28,7 @@ pub struct PCGSolver {
 /// If res_tol is set, $$||r_\text{new} - r_\text{old}||_C < \text{tol}_r * ||b||_C$$ is used.
 ///
 /// If two_norm is set, $$||.||_2$$ norm is used.
-#[derive(Default, Debug, Clone, Builder)]
+#[derive(Default, Debug, Clone, Builder, Copy)]
 #[builder(setter(into, strip_option), default)]
 #[builder(build_fn(validate = "Self::validate", error = "HypreError"))]
 pub struct PCGSolverConfig {

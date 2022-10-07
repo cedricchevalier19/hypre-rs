@@ -21,7 +21,7 @@
 //!
 //! // CG solver parameters
 //! let my_parameters = PCGSolverConfigBuilder::default()
-//! .tol(1e-9)
+//!             .tol(1e-9)
 //!             .max_iters(500usize)
 //!             .two_norm(true)
 //!             .recompute_residual_period(8usize)

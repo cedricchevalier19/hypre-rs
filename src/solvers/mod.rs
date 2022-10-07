@@ -33,7 +33,7 @@ pub use cg::PCGSolverConfig;
 pub use cg::PCGSolverConfigBuilder;
 
 /// Solver status information
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, Copy)]
 pub struct IterativeSolverStatus {
     /// Number of iterations done
     pub num_iters: usize,
@@ -72,6 +72,7 @@ pub trait LinearSolver {
 }
 
 #[enum_dispatch(LinearSolver)]
+#[derive(Debug)]
 pub enum Solver {
     CG(PCGSolver),
 }
@@ -82,7 +83,7 @@ mod tests {
     #[test]
     fn it_works() {
         let universe = mpi::initialize().unwrap();
-        let solver = Solver::CG(PCGSolver::new(universe.world(), Default::default()).unwrap());
+        let _solver = Solver::CG(PCGSolver::new(universe.world(), Default::default()).unwrap());
         //solver.solve();
     }
 }
