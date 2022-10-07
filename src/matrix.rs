@@ -64,6 +64,10 @@ pub struct IJMatrix {
     internal_matrix: HYPRE_IJMatrix,
 }
 
+/// Converts from a [IJMatrix]
+///
+/// Calls hypre to assemble the matrix in CSR format.
+/// Conversion can fail in hypre.
 impl TryFrom<IJMatrix> for CSRMatrix {
     type Error = HypreError;
 
@@ -81,6 +85,7 @@ impl TryFrom<IJMatrix> for CSRMatrix {
 }
 
 impl IJMatrix {
+    /// Creates an IJMatrix from a communicator [comm] and sizes
     pub fn new(
         comm: impl mpi::topology::Communicator,
         rows: (usize, usize),
@@ -115,8 +120,13 @@ impl Drop for IJMatrix {
     }
 }
 
+/// Matrix datatype
+///
+/// This type is generic, to handle the different hypre implementations
 pub enum Matrix {
+    /// IJ matrix, defined algebraically
     IJ(IJMatrix),
+    /// Parallel CSR matrix, behind IJ matrix
     ParCSR(CSRMatrix),
 }
 

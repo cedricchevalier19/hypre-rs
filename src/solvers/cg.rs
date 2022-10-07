@@ -86,7 +86,7 @@ impl PCGSolverConfigBuilder {
 ///
 /// ```
 impl PCGSolver {
-    /// Create a new PCGSolver according to the given configuration
+    /// Creates a new PCGSolver according to the given configuration
     pub fn new(
         comm: impl mpi::topology::Communicator,
         config: PCGSolverConfig,
@@ -104,7 +104,7 @@ impl PCGSolver {
         solver.config(config)
     }
 
-    /// Change the configuration of the solver
+    /// Changes the configuration of the solver
     pub fn config(self, config: PCGSolverConfig) -> HypreResult<Self> {
         set_parameter![HYPRE_PCGSetTol, self.internal_solver, config.tol];
         set_parameter![
@@ -138,7 +138,7 @@ impl PCGSolver {
         Ok(self)
     }
 
-    /// Return the configuration of the solver
+    /// Returns the configuration of the solver
     pub fn current_config(&self) -> HypreResult<PCGSolverConfig> {
         let mut config: PCGSolverConfig = Default::default();
 
@@ -163,10 +163,6 @@ impl PCGSolver {
 
 impl LinearSolver for PCGSolver {
     /// Solves a linear system using Preconditioned Conjugate Gradient algorithm.
-    ///
-    /// # Panics
-    /// This function can panic if number of iterations returned by hypre is negative.
-    ///
     fn solve(
         &self,
         mat: Matrix,
