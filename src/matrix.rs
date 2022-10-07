@@ -1,4 +1,5 @@
 use crate::error::HypreError;
+use crate::matrix::Matrix::{ParCSR, IJ};
 use hypre_sys::*;
 use mpi::topology::Communicator;
 use std::{ffi::c_void, ptr::null_mut};
@@ -39,6 +40,10 @@ impl CSRMatrix {
             }
         }
     }
+
+    fn get_internal_matrix(self) -> Result<HYPRE_Matrix, HypreError> {
+        Ok(self.internal_matrix as HYPRE_Matrix)
+    }
 }
 
 impl Drop for CSRMatrix {
@@ -53,16 +58,19 @@ pub struct IJMatrix {
     internal_matrix: HYPRE_IJMatrix,
 }
 
-impl From<IJMatrix> for CSRMatrix {
-    fn from(ij: IJMatrix) -> Self {
+impl TryFrom<IJMatrix> for CSRMatrix {
+    type Error = HypreError;
+
+    fn try_from(ij: IJMatrix) -> Result<Self, Self::Error> {
         let mut out = CSRMatrix {
             internal_matrix: null_mut(),
         };
         unsafe {
+            check_hypre!(HYPRE_IJMatrixAssemble(ij.internal_matrix));
             let csr_mat_ptr = &mut out.internal_matrix as *mut _ as *mut *mut c_void;
-            HYPRE_IJMatrixGetObject(ij.internal_matrix, csr_mat_ptr);
+            check_hypre!(HYPRE_IJMatrixGetObject(ij.internal_matrix, csr_mat_ptr));
         }
-        out
+        Ok(out)
     }
 }
 
@@ -104,4 +112,13 @@ impl Drop for IJMatrix {
 pub enum Matrix {
     IJ(IJMatrix),
     ParCSR(CSRMatrix),
+}
+
+impl Matrix {
+    pub(crate) fn get_internal_matrix(self) -> Result<HYPRE_Matrix, HypreError> {
+        match self {
+            IJ(m) => <IJMatrix as TryInto<CSRMatrix>>::try_into(m)?.get_internal_matrix(),
+            ParCSR(m) => m.get_internal_matrix(),
+        }
+    }
 }

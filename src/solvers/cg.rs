@@ -9,6 +9,7 @@ use std::ptr::null_mut;
 use crate::error::HypreError;
 use crate::solvers::IterativeSolverStatus;
 
+use crate::matrix::Matrix;
 use hypre_sys::*;
 use mpi;
 
@@ -167,12 +168,12 @@ impl PCGSolver {
     ///
     pub fn solve(
         &self,
-        mat: HYPRE_Matrix,
+        mat: Matrix,
         rhs: HYPRE_Vector,
         x: HYPRE_Vector,
     ) -> Result<IterativeSolverStatus, HypreError> {
         unsafe {
-            match HYPRE_PCGSolve(self.internal_solver, mat, rhs, x) {
+            match HYPRE_PCGSolve(self.internal_solver, mat.get_internal_matrix()?, rhs, x) {
                 0 => {
                     let mut res_norm: HYPRE_Real = 0.0.into();
                     // We do not care about return value of HYPRE_PCGGet functions has they cannot generate new errors
