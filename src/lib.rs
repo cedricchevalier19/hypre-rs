@@ -52,7 +52,9 @@ mod utils;
 
 pub mod matrix;
 pub mod solvers;
+pub mod vector;
 
 type HypreResult<T> = Result<T, error::HypreError>;
 pub use error::HypreError;
 pub use matrix::Matrix;
+pub use vector::Vector;

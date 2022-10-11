@@ -8,7 +8,7 @@ use crate::error::HypreError;
 use crate::solvers::{IterativeSolverStatus, LinearSolver};
 
 use crate::matrix::Matrix;
-use crate::HypreResult;
+use crate::{HypreResult, Vector};
 use hypre_sys::*;
 use mpi;
 
@@ -164,14 +164,14 @@ impl PCGSolver {
 
 impl LinearSolver for PCGSolver {
     /// Solves a linear system using Preconditioned Conjugate Gradient algorithm.
-    fn solve(
-        &self,
-        mat: Matrix,
-        rhs: HYPRE_Vector,
-        x: HYPRE_Vector,
-    ) -> HypreResult<IterativeSolverStatus> {
+    fn solve(&self, mat: Matrix, rhs: Vector, x: Vector) -> HypreResult<IterativeSolverStatus> {
         unsafe {
-            match HYPRE_PCGSolve(self.internal_solver, mat.get_internal_matrix()?, rhs, x) {
+            match HYPRE_PCGSolve(
+                self.internal_solver,
+                mat.get_internal()?,
+                rhs.get_internal()?,
+                x.get_internal()?,
+            ) {
                 0 => {
                     let mut res_norm: HYPRE_Real = 0.0.into();
                     // We do not care about return value of HYPRE_PCGGet functions has they cannot generate new errors

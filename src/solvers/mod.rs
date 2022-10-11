@@ -27,7 +27,7 @@ use std::fmt;
 use std::fmt::Formatter;
 
 use crate::matrix::Matrix;
-use crate::HypreResult;
+use crate::{HypreResult, Vector};
 pub use cg::PCGSolver;
 pub use cg::PCGSolverConfig;
 pub use cg::PCGSolverConfigBuilder;
@@ -63,12 +63,7 @@ impl fmt::Display for IterativeSolverStatus {
 
 #[enum_dispatch]
 pub trait LinearSolver {
-    fn solve(
-        &self,
-        mat: Matrix,
-        rhs: HYPRE_Vector,
-        x: HYPRE_Vector,
-    ) -> HypreResult<IterativeSolverStatus>;
+    fn solve(&self, mat: Matrix, rhs: Vector, x: Vector) -> HypreResult<IterativeSolverStatus>;
 }
 
 #[enum_dispatch(LinearSolver)]

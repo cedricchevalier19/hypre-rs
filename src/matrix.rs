@@ -48,7 +48,7 @@ impl CSRMatrix {
         }
     }
 
-    fn get_internal_matrix(self) -> HypreResult<HYPRE_Matrix> {
+    fn get_internal(self) -> HypreResult<HYPRE_Matrix> {
         Ok(self.internal_matrix as HYPRE_Matrix)
     }
 }
@@ -134,10 +134,10 @@ pub enum Matrix {
 }
 
 impl Matrix {
-    pub(crate) fn get_internal_matrix(self) -> HypreResult<HYPRE_Matrix> {
+    pub(crate) fn get_internal(self) -> HypreResult<HYPRE_Matrix> {
         match self {
-            IJ(m) => <IJMatrix as TryInto<CSRMatrix>>::try_into(m)?.get_internal_matrix(),
-            ParCSR(m) => m.get_internal_matrix(),
+            IJ(m) => <IJMatrix as TryInto<CSRMatrix>>::try_into(m)?.get_internal(),
+            ParCSR(m) => m.get_internal(),
         }
     }
 }
