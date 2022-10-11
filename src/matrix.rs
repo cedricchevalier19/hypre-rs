@@ -87,9 +87,37 @@ impl TryFrom<IJMatrix> for CSRMatrix {
 }
 
 impl IJMatrix {
-    /// Creates an IJMatrix from a communicator [comm] and sizes
+    /// Creates an IJMatrix from a communicator [Communicator] and sizes
+    ///
+    /// # Arguments
+    ///
+    /// - comm: MPI communicotor
+    /// - rows: couple of global indices of rows owned by current processor
+    /// - cols: couple of global indices of cols owned by current processor
+    ///
+    /// # Remarks
+    ///
+    /// # Example
+    ///
+    /// ```
+    /// # fn main() -> Result<(), hypre_rs::HypreError> {
+    /// # extern crate hypre_rs;
+    /// # use mpi::initialize;
+    /// # use mpi::topology::Communicator;
+    /// use hypre_rs::matrix::IJMatrix;
+    /// # let universe = mpi::initialize().unwrap();
+    /// # let mpi_comm = universe.world();
+    /// let global_size: usize = 100;
+    /// // Cannot panic as global_size is properly represented on usize
+    /// let step = (global_size as i64 / mpi_comm.size() as i64).try_into().unwrap();
+    /// let begin: usize = (mpi_comm.rank() * step).into();
+    /// let end = (begin + step).clamp(0, global_size);
+    /// let ij_matrix = IJMatrix::new(&mpi_comm, (begin, end), (begin, end))?;
+    /// # Ok(())
+    /// # }
+    /// ```
     pub fn new(
-        comm: impl mpi::topology::Communicator,
+        comm: &impl mpi::topology::Communicator,
         rows: (usize, usize),
         cols: (usize, usize),
     ) -> HypreResult<Self> {

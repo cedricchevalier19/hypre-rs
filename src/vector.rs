@@ -13,7 +13,7 @@ pub struct IJVector {
 
 impl IJVector {
     /// Creates an IJVector from a communicator [comm] and sizes
-    pub fn new(comm: impl mpi::topology::Communicator, rows: (usize, usize)) -> HypreResult<Self> {
+    pub fn new(comm: &impl mpi::topology::Communicator, rows: (usize, usize)) -> HypreResult<Self> {
         let mut out = Self {
             internal: null_mut(),
         };

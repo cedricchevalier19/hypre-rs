@@ -77,8 +77,8 @@ mod tests {
     use super::*;
     #[test]
     fn it_works() {
-        let universe = mpi::initialize().unwrap();
-        let _solver = Solver::CG(PCGSolver::new(universe.world(), Default::default()).unwrap());
+        let mpi_comm = mpi::initialize().unwrap().world();
+        let _solver = Solver::CG(PCGSolver::new(&mpi_comm, Default::default()).unwrap());
         //solver.solve();
     }
 }

@@ -9,15 +9,17 @@
 //! # fn main() -> Result<(), hypre_rs::HypreError> {
 //! extern crate hypre_rs;
 //! # use mpi::initialize;
-//! use hypre_rs::Matrix;
+//! use hypre_rs::{Matrix, Vector};
 //! use hypre_rs::matrix::IJMatrix;
+//! use hypre_rs::vector::IJVector;
 //! use hypre_rs::solvers::{PCGSolverConfigBuilder, PCGSolver, Solver};
+//! use hypre_rs::Vector::IJ;
 //!
-//! let universe = mpi::initialize().unwrap();
+//! let mpi_comm = mpi::initialize().unwrap().world();
 //!
-//! let matrix = Matrix::IJ(IJMatrix::new(universe, (0, 12), (0, 12))?);
-//! let rhs = Vector(universe, (0, 12)?);
-//! let b = Vector(universe, (0,12)?);
+//! let matrix = Matrix::IJ(IJMatrix::new(&mpi_comm, (0, 12), (0, 12))?);
+//! let rhs = Vector::IJ(IJVector::new(&mpi_comm, (0, 12))?);
+//! let b = Vector::IJ(IJVector::new(&mpi_comm, (0,12))?);
 //!
 //! // CG solver parameters
 //! let my_parameters = PCGSolverConfigBuilder::default()
@@ -28,7 +30,7 @@
 //!             .build()?;
 //!
 //! // Create new CG solver with previous parameters
-//! let solver = Solver::CG(PCGSolver::new(universe.world(), my_parameters)?);
+//! let solver = Solver::CG(PCGSolver::new(&mpi_comm, my_parameters)?);
 //!
 //! match solver.solve(matrix, rhs, b) {
 //!     Ok(info) => println!("Solver has converged: {}", info),

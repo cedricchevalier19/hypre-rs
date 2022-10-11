@@ -1,5 +1,3 @@
-extern crate derive_builder;
-
 use derive_builder::Builder;
 
 use std::ptr::null_mut;
@@ -81,15 +79,15 @@ impl PCGSolverConfigBuilder {
 /// ```
 /// use hypre_rs::solvers::PCGSolver;
 ///
-/// let universe = mpi::initialize().unwrap();
+/// # let mpi_comm = mpi::initialize().unwrap().world();
 /// // Create PCGSolver with hypre's default configuration.
-/// let solver = PCGSolver::new(universe.world(), Default::default()).unwrap();
+/// let solver = PCGSolver::new(&mpi_comm, Default::default()).unwrap();
 ///
 /// ```
 impl PCGSolver {
     /// Creates a new PCGSolver according to the given configuration
     pub fn new(
-        comm: impl mpi::topology::Communicator,
+        comm: &impl mpi::topology::Communicator,
         config: PCGSolverConfig,
     ) -> HypreResult<Self> {
         let mut solver = PCGSolver {
@@ -209,8 +207,8 @@ mod tests {
     use super::*;
     #[test]
     fn config_test() {
-        let universe = mpi::initialize().unwrap();
-        let solver = PCGSolver::new(universe.world(), Default::default()).unwrap();
+        let mpi_comm = mpi::initialize().unwrap().world();
+        let solver = PCGSolver::new(&mpi_comm, Default::default()).unwrap();
 
         let parameters = solver.current_config();
         println!("{:?}", parameters);
@@ -222,7 +220,7 @@ mod tests {
             .recompute_residual_period(8usize)
             .build()
             .unwrap();
-        let solver = PCGSolver::new(universe.world(), my_parameters.clone()).unwrap();
+        let solver = PCGSolver::new(&mpi_comm, my_parameters.clone()).unwrap();
         let parameters = solver.current_config().unwrap();
         println!("{:?}", parameters);
         assert_eq!(my_parameters.tol, parameters.tol);
