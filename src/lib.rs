@@ -14,6 +14,7 @@
 //! use hypre_rs::vector::IJVector;
 //! use hypre_rs::solvers::{PCGSolverConfigBuilder, PCGSolver, Solver};
 //! use hypre_rs::Vector::IJ;
+//! use crate::hypre_rs::solvers::LinearSolver;
 //!
 //! let mpi_comm = mpi::initialize().unwrap().world();
 //!
@@ -34,7 +35,7 @@
 //!
 //! match solver.solve(matrix, rhs, b) {
 //!     Ok(info) => println!("Solver has converged: {}", info),
-//!     Err(E) => return E,
+//!     Err(e) => return Err(e),
 //! }
 //!
 //! # Ok(())
