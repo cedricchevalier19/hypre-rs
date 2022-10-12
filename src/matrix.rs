@@ -1,14 +1,33 @@
 use crate::error::HypreError;
 use crate::matrix::Matrix::{ParCSR, IJ};
 use crate::HypreResult;
-use hypre_sys::*;
+use hypre_sys::{
+    HYPRE_BigInt, HYPRE_Complex, HYPRE_IJMatrix, HYPRE_IJMatrixAddToValues, HYPRE_IJMatrixAssemble,
+    HYPRE_IJMatrixCreate, HYPRE_IJMatrixDestroy, HYPRE_IJMatrixGetObject, HYPRE_IJMatrixInitialize,
+    HYPRE_IJMatrixSetObjectType, HYPRE_Int, HYPRE_Matrix, HYPRE_ParCSRMatrix,
+    HYPRE_ParCSRMatrixCreate, HYPRE_ParCSRMatrixDestroy,
+};
 use mpi::topology::Communicator;
 use std::num::TryFromIntError;
 use std::{ffi::c_void, ptr::null_mut};
 
+use itertools::izip;
+use itertools::Itertools;
+
 #[derive(Debug, Clone)]
 pub struct CSRMatrix {
     internal_matrix: HYPRE_ParCSRMatrix,
+}
+
+#[derive(Debug, Clone, Copy)]
+pub struct NNZ<Id, V>
+where
+    Id: Copy,
+    V: Copy,
+{
+    row_id: Id,
+    col_id: Id,
+    value: V,
 }
 
 impl CSRMatrix {
@@ -109,9 +128,9 @@ impl IJMatrix {
     /// # let mpi_comm = universe.world();
     /// let global_size: usize = 100;
     /// // Cannot panic as global_size is properly represented on usize
-    /// let step = (global_size as i64 / mpi_comm.size() as i64).try_into().unwrap();
-    /// let begin: usize = (mpi_comm.rank() * step).into();
-    /// let end = (begin + step).clamp(0, global_size);
+    /// let step: usize = (global_size as i64 / mpi_comm.size() as i64).try_into().unwrap();
+    /// let begin: usize = mpi_comm.rank() as usize * step;
+    /// let end = (begin + step).clamp(0usize, global_size);
     /// let ij_matrix = IJMatrix::new(&mpi_comm, (begin, end), (begin, end))?;
     /// # Ok(())
     /// # }
@@ -139,6 +158,36 @@ impl IJMatrix {
             check_hypre!(HYPRE_IJMatrixInitialize(*h_matrix));
         }
         Ok(out)
+    }
+
+    pub fn add_elements<Id, V>(self, nnz: &[NNZ<Id, V>]) -> HypreResult<Self>
+    where
+        Id: Copy,
+        i32: From<Id>,
+        V: Copy + Into<f64>,
+    {
+        let mut rows = vec![0 as HYPRE_BigInt; nnz.len()];
+        let mut cols = vec![0 as HYPRE_BigInt; nnz.len()];
+        let mut ncols = vec![1 as HYPRE_Int; nnz.len()];
+        let mut values = vec![0 as HYPRE_Complex; nnz.len()];
+
+        izip!(&mut rows, &mut cols, &mut values, nnz).foreach(|(row, col, val, nz)| {
+            *row = nz.row_id.try_into().unwrap();
+            *col = nz.col_id.try_into().unwrap();
+            *val = nz.value.try_into().unwrap();
+        });
+
+        unsafe {
+            check_hypre!(HYPRE_IJMatrixAddToValues(
+                self.internal_matrix,
+                rows.len().try_into()?,
+                ncols.as_mut_ptr(),
+                cols.as_mut_ptr(),
+                rows.as_mut_ptr(),
+                values.as_mut_ptr()
+            ));
+        }
+        Ok(self)
     }
 }
 
