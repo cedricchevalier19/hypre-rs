@@ -189,12 +189,12 @@ impl IJMatrix {
     /// # Ok(())
     /// # }
     /// ```
-    pub fn add_elements<Id, V>(self, nnz: Vec<NNZ<i32, f64>>) -> HypreResult<()>
+    pub fn add_elements<Id, V>(self, nnz: Vec<NNZ<Id, V>>) -> HypreResult<()>
     where
-        Id: Copy + TryInto<i32>,
-        V: Copy + TryInto<f64>,
-        HypreError: From<<Id as TryInto<i32>>::Error>,
-        HypreError: From<<V as TryInto<f64>>::Error>,
+        Id: Copy + TryInto<HYPRE_Int>,
+        V: Copy + TryInto<HYPRE_Complex>,
+        HypreError: From<<Id as TryInto<HYPRE_Int>>::Error>,
+        HypreError: From<<V as TryInto<HYPRE_Complex>>::Error>,
     {
         let mut rows = vec![0 as HYPRE_BigInt; nnz.len()];
         let mut cols = vec![0 as HYPRE_BigInt; nnz.len()];
