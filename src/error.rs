@@ -1,3 +1,4 @@
+use std::convert::Infallible;
 use crate::error::HypreError::{
     HypreArgError, HypreConvError, HypreGenericError, HypreMemoryError, UnknowError,
 };
@@ -24,6 +25,8 @@ pub enum HypreError {
     InvalidParameterPositive,
     #[error(transparent)]
     ConversionError(#[from] TryFromIntError),
+    #[error(transparent)]
+    NoError(#[from] Infallible)
 }
 
 impl HypreError {

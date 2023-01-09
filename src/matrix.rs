@@ -25,9 +25,9 @@ where
     Id: Copy,
     V: Copy,
 {
-    row_id: Id,
-    col_id: Id,
-    value: V,
+    pub row_id: Id,
+    pub col_id: Id,
+    pub value: V,
 }
 
 impl CSRMatrix {
@@ -160,22 +160,53 @@ impl IJMatrix {
         Ok(out)
     }
 
-    pub fn add_elements<Id, V>(self, nnz: &[NNZ<Id, V>]) -> HypreResult<Self>
+    /// Add elements to the matrix.
+    ///
+    /// Elements that do not already exist are created.
+    /// This routine also to contribute to any element, even remote.
+    ///
+    /// # Example
+    ///
+    /// ```
+    /// # fn main() -> Result<(), hypre_rs::HypreError> {
+    /// # extern crate hypre_rs;
+    /// # use mpi::initialize;
+    /// # use mpi::topology::Communicator;
+    /// use hypre_rs::matrix::{IJMatrix, NNZ};
+    /// # let universe = mpi::initialize().unwrap();
+    /// # let mpi_comm = universe.world();
+    /// # let global_size: usize = 100;
+    /// // Cannot panic as global_size is properly represented on usize
+    /// # let step: usize = (global_size as i64 / mpi_comm.size() as i64).try_into().unwrap();
+    /// # let local_begin: usize = mpi_comm.rank() as usize * step;
+    /// # let local_end = (local_begin + step).clamp(0usize, global_size);
+    /// let ij_matrix = IJMatrix::new(&mpi_comm, (local_begin, local_end), (local_begin, local_end))?;
+    /// let mut nnz = Vec::<NNZ::<i32, f64>>::with_capacity(local_end - local_begin);
+    /// for id in local_begin..local_end {
+    ///     nnz.push(NNZ::<i32, f64>{row_id: id as i32, col_id: id as i32, value: 1.0});
+    /// }
+    /// ij_matrix.add_elements::<i32, f64>(nnz)?;
+    /// # Ok(())
+    /// # }
+    /// ```
+    pub fn add_elements<Id, V>(self, nnz: Vec<NNZ<i32, f64>>) -> HypreResult<()>
     where
-        Id: Copy,
-        i32: From<Id>,
-        V: Copy + Into<f64>,
+        Id: Copy + TryInto<i32>,
+        V: Copy + TryInto<f64>,
+        HypreError: From<<Id as TryInto<i32>>::Error>,
+        HypreError: From<<V as TryInto<f64>>::Error>,
     {
         let mut rows = vec![0 as HYPRE_BigInt; nnz.len()];
         let mut cols = vec![0 as HYPRE_BigInt; nnz.len()];
         let mut ncols = vec![1 as HYPRE_Int; nnz.len()];
         let mut values = vec![0 as HYPRE_Complex; nnz.len()];
 
-        izip!(&mut rows, &mut cols, &mut values, nnz).foreach(|(row, col, val, nz)| {
-            *row = nz.row_id.try_into().unwrap();
-            *col = nz.col_id.try_into().unwrap();
-            *val = nz.value.try_into().unwrap();
-        });
+        izip!(&mut rows, &mut cols, &mut values, nnz).try_for_each(|(row, col, val, nz)| {
+            *row = nz.row_id.try_into()?;
+            *col = nz.col_id.try_into()?;
+            *val = nz.value.try_into()?;
+            Ok::<(), HypreError>(())
+        })?;
 
         unsafe {
             check_hypre!(HYPRE_IJMatrixAddToValues(
@@ -187,7 +218,7 @@ impl IJMatrix {
                 values.as_mut_ptr()
             ));
         }
-        Ok(self)
+        Ok(())
     }
 }
 
