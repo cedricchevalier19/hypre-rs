@@ -32,7 +32,7 @@ where
 
 impl CSRMatrix {
     fn new(
-        comm: impl Communicator,
+        comm: &impl Communicator,
         global_num_rows: usize,
         global_num_cols: usize,
         row_starts: &[usize],
@@ -75,7 +75,7 @@ impl CSRMatrix {
 impl Drop for CSRMatrix {
     fn drop(&mut self) {
         unsafe {
-            HYPRE_ParCSRMatrixDestroy(self.internal_matrix);
+//            HYPRE_ParCSRMatrixDestroy(self.internal_matrix);
         }
     }
 }

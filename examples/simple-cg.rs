@@ -1,5 +1,8 @@
 extern crate hypre_rs;
 use hypre_rs::matrix::{IJMatrix, NNZ};
+use hypre_rs::solvers::{LinearSolver, PCGSolver, PCGSolverConfigBuilder, Solver};
+use hypre_rs::vector::IJVector;
+use hypre_rs::{Matrix, Vector};
 use mpi::initialize;
 use mpi::topology::Communicator;
 
@@ -32,4 +35,24 @@ fn main() {
             value: 1.0,
         }))
         .unwrap();
+
+    let rhs = Vector::IJ(IJVector::new(&mpi_comm, (local_begin, local_end)).unwrap());
+    let b = Vector::IJ(IJVector::new(&mpi_comm, (local_begin, local_end)).unwrap());
+
+    // CG solver parameters
+    let my_parameters = PCGSolverConfigBuilder::default()
+        .tol(1e-9)
+        .max_iters(500usize)
+        .two_norm(true)
+        .recompute_residual_period(8usize)
+        .build()
+        .unwrap();
+
+    // Create new CG solver with previous parameters
+    let solver = Solver::CG(PCGSolver::new(&mpi_comm, my_parameters).unwrap());
+
+    match solver.solve(Matrix::IJ(ij_matrix), rhs, b) {
+        Ok(info) => println!("Solver has converged: {}", info),
+        Err(e) => println!("error {:?}", e),
+    }
 }

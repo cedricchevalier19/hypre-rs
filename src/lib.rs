@@ -9,6 +9,7 @@
 //! # fn main() -> Result<(), hypre_rs::HypreError> {
 //! extern crate hypre_rs;
 //! # use mpi::initialize;
+//! # use mpi::topology::Communicator;
 //! use hypre_rs::{Matrix, Vector};
 //! use hypre_rs::matrix::IJMatrix;
 //! use hypre_rs::vector::IJVector;
