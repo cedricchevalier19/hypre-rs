@@ -181,12 +181,7 @@ impl IJMatrix {
     /// # let local_begin: usize = mpi_comm.rank() as usize * step;
     /// # let local_end = (local_begin + step).clamp(0usize, global_size);
     /// let ij_matrix = IJMatrix::new(&mpi_comm, (local_begin, local_end), (local_begin, local_end))?;
-    /// let mut nnz = Vec::<NNZ::<i32, f64>>::with_capacity(local_end - local_begin);
-    /// for id in local_begin..local_end {
-    ///     nnz.push(NNZ::<i32, f64>{row_id: id as i32, col_id: id as i32, value: 1.0});
-    /// }
-    /// ij_matrix.add_elements::<i32, f64>(nnz.into_iter())?;
-    /// # Ok(())
+    /// ij_matrix.add_elements::<i32, f64>((local_begin..local_end).map(|id| {NNZ::<i32, f64>{row_id: id as i32, col_id: id as i32, value: 1.0}}))
     /// # }
     /// ```
     pub fn add_elements<Id, V>(self, nnz: impl Iterator<Item = NNZ<Id, V>>) -> HypreResult<()>
