@@ -185,28 +185,28 @@ impl IJMatrix {
     /// for id in local_begin..local_end {
     ///     nnz.push(NNZ::<i32, f64>{row_id: id as i32, col_id: id as i32, value: 1.0});
     /// }
-    /// ij_matrix.add_elements::<i32, f64>(nnz)?;
+    /// ij_matrix.add_elements::<i32, f64>(nnz.into_iter())?;
     /// # Ok(())
     /// # }
     /// ```
-    pub fn add_elements<Id, V>(self, nnz: Vec<NNZ<Id, V>>) -> HypreResult<()>
+    pub fn add_elements<Id, V>(self, nnz: impl Iterator<Item = NNZ<Id, V>>) -> HypreResult<()>
     where
-        Id: Copy + TryInto<HYPRE_Int>,
+        Id: Copy + TryInto<HYPRE_BigInt>,
         V: Copy + TryInto<HYPRE_Complex>,
-        HypreError: From<<Id as TryInto<HYPRE_Int>>::Error>,
+        HypreError: From<<Id as TryInto<HYPRE_BigInt>>::Error>,
         HypreError: From<<V as TryInto<HYPRE_Complex>>::Error>,
     {
-        let mut rows = vec![0 as HYPRE_BigInt; nnz.len()];
-        let mut cols = vec![0 as HYPRE_BigInt; nnz.len()];
-        let mut ncols = vec![1 as HYPRE_Int; nnz.len()];
-        let mut values = vec![0 as HYPRE_Complex; nnz.len()];
-
-        izip!(&mut rows, &mut cols, &mut values, nnz).try_for_each(|(row, col, val, nz)| {
-            *row = nz.row_id.try_into()?;
-            *col = nz.col_id.try_into()?;
-            *val = nz.value.try_into()?;
-            Ok::<(), HypreError>(())
-        })?;
+        let (mut rows, mut cols, mut values): (Vec<_>, Vec<_>, Vec<_>) = nnz
+            .into_iter()
+            .map(|nnz| {
+                (
+                    nnz.row_id.try_into().unwrap_or_default(),
+                    nnz.col_id.try_into().unwrap_or_default(),
+                    nnz.value.try_into().unwrap_or_default(),
+                )
+            })
+            .multiunzip();
+        let mut ncols = vec![1 as HYPRE_Int; rows.len()];
 
         unsafe {
             check_hypre!(HYPRE_IJMatrixAddToValues(

@@ -1,9 +1,9 @@
-use std::convert::Infallible;
 use crate::error::HypreError::{
     HypreArgError, HypreConvError, HypreGenericError, HypreMemoryError, UnknowError,
 };
 use crate::HypreError::ConversionError;
 use hypre_sys::{HYPRE_ClearError, HYPRE_GetErrorArg, HYPRE_Int};
+use std::convert::Infallible;
 use std::num::TryFromIntError;
 use thiserror::Error;
 
@@ -26,7 +26,7 @@ pub enum HypreError {
     #[error(transparent)]
     ConversionError(#[from] TryFromIntError),
     #[error(transparent)]
-    NoError(#[from] Infallible)
+    NoError(#[from] Infallible),
 }
 
 impl HypreError {
