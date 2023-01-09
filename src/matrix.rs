@@ -5,7 +5,7 @@ use hypre_sys::{
     HYPRE_BigInt, HYPRE_Complex, HYPRE_IJMatrix, HYPRE_IJMatrixAddToValues, HYPRE_IJMatrixAssemble,
     HYPRE_IJMatrixCreate, HYPRE_IJMatrixDestroy, HYPRE_IJMatrixGetObject, HYPRE_IJMatrixInitialize,
     HYPRE_IJMatrixSetObjectType, HYPRE_Int, HYPRE_Matrix, HYPRE_ParCSRMatrix,
-    HYPRE_ParCSRMatrixCreate, HYPRE_ParCSRMatrixDestroy,
+    HYPRE_ParCSRMatrixCreate, HYPRE_ParCSRMatrixDestroy, HYPRE_PARCSR,
 };
 use mpi::topology::Communicator;
 use std::num::TryFromIntError;
@@ -154,7 +154,11 @@ impl IJMatrix {
                 h_matrix,
             ));
 
-            check_hypre!(HYPRE_IJMatrixSetObjectType(*h_matrix, 0));
+            // unwrap is ok as HYPRE_PARCSR is i32 in C
+            check_hypre!(HYPRE_IJMatrixSetObjectType(
+                *h_matrix,
+                HYPRE_PARCSR.try_into().unwrap()
+            ));
             check_hypre!(HYPRE_IJMatrixInitialize(*h_matrix));
         }
         Ok(out)
@@ -180,11 +184,11 @@ impl IJMatrix {
     /// # let step: usize = (global_size as i64 / mpi_comm.size() as i64).try_into().unwrap();
     /// # let local_begin: usize = mpi_comm.rank() as usize * step;
     /// # let local_end = (local_begin + step).clamp(0usize, global_size);
-    /// let ij_matrix = IJMatrix::new(&mpi_comm, (local_begin, local_end), (local_begin, local_end))?;
+    /// let mut ij_matrix = IJMatrix::new(&mpi_comm, (local_begin, local_end), (local_begin, local_end))?;
     /// ij_matrix.add_elements::<i32, f64>((local_begin..local_end).map(|id| {NNZ::<i32, f64>{row_id: id as i32, col_id: id as i32, value: 1.0}}))
     /// # }
     /// ```
-    pub fn add_elements<Id, V>(self, nnz: impl Iterator<Item = NNZ<Id, V>>) -> HypreResult<()>
+    pub fn add_elements<Id, V>(&mut self, nnz: impl Iterator<Item = NNZ<Id, V>>) -> HypreResult<()>
     where
         Id: Copy + TryInto<HYPRE_BigInt>,
         V: Copy + TryInto<HYPRE_Complex>,
