@@ -26,7 +26,11 @@ impl IJVector {
                 h_matrix,
             ));
 
-            check_hypre!(HYPRE_IJVectorSetObjectType(*h_matrix, 0));
+            // unwrap because HYPRE_PARCSR is i32 in C
+            check_hypre!(HYPRE_IJVectorSetObjectType(
+                *h_matrix,
+                HYPRE_PARCSR.try_into().unwrap()
+            ));
             check_hypre!(HYPRE_IJVectorInitialize(*h_matrix));
         }
         Ok(out)
