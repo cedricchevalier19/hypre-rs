@@ -1,5 +1,5 @@
 extern crate hypre_rs;
-use hypre_rs::matrix::{IJMatrix, NNZ};
+use hypre_rs::matrix::IJMatrix;
 use hypre_rs::solvers::{LinearSolver, PCGSolver, PCGSolverConfigBuilder, Solver};
 use hypre_rs::vector::IJVector;
 use hypre_rs::{Matrix, Vector};
@@ -10,13 +10,13 @@ fn main() {
     let mpi_comm = universe.world();
 
     // Define matrix sizes
-    let global_size: usize = 100;
-    // Cannot panic as global_size is properly represented on usize
-    let step: usize = (global_size as i64 / mpi_comm.size() as i64)
+    let mesh_size: u32 = 10;
+    let global_size = mesh_size * mesh_size;
+    let step: u32 = (global_size as i64 / mpi_comm.size() as i64)
         .try_into()
         .unwrap();
-    let local_begin: usize = mpi_comm.rank() as usize * step;
-    let local_end = (local_begin + step).clamp(0usize, global_size);
+    let local_begin: u32 = (mpi_comm.rank() * step as i32).try_into().unwrap();
+    let local_end = (local_begin + step).clamp(0u32, global_size);
 
     // Create a new matrix
     let mut ij_matrix = IJMatrix::new(
@@ -26,17 +26,33 @@ fn main() {
     )
     .unwrap();
 
-    // Fill the matrix on the local diagonal
-    ij_matrix
-        .add_elements::<u32, f64>((local_begin..local_end).map(|id| NNZ::<u32, f64> {
-            row_id: id as u32,
-            col_id: id as u32,
-            value: 1.0,
-        }))
+    let mut nnz_buffer = Vec::<(u32, u32, f64)>::with_capacity(5);
+    // Fill the matrix
+    for row in local_begin..local_end {
+        if row >= mesh_size {
+            nnz_buffer.push((row, row - mesh_size, -1.0));
+        }
+        if (row % mesh_size) != 0 {
+            nnz_buffer.push((row, row - 1, -1.0));
+        }
+        nnz_buffer.push((row, row, 4.0));
+        if ((row + 1) % mesh_size) != 0 {
+            nnz_buffer.push((row, row + 1, -1.0));
+        }
+        if row + mesh_size < global_size {
+            nnz_buffer.push((row, row + mesh_size, -1.0));
+        }
+        ij_matrix.add_elements(nnz_buffer.iter().copied()).unwrap();
+        nnz_buffer.clear();
+    }
+
+    let mut rhs = IJVector::new(&mpi_comm, (local_begin, local_end)).unwrap();
+    rhs.add_elements((local_begin..local_end).map(|i| (i, i as f64)))
         .unwrap();
 
-    let rhs = Vector::IJ(IJVector::new(&mpi_comm, (local_begin, local_end)).unwrap());
-    let mut x = Vector::IJ(IJVector::new(&mpi_comm, (local_begin, local_end)).unwrap());
+    let mut x = IJVector::new(&mpi_comm, (local_begin, local_end)).unwrap();
+    x.add_elements((local_begin..local_end).map(|i| (i, 0f64)))
+        .unwrap();
 
     // CG solver parameters
     let my_parameters = PCGSolverConfigBuilder::default()
@@ -51,7 +67,9 @@ fn main() {
     let solver = Solver::CG(PCGSolver::new(&mpi_comm, my_parameters).unwrap());
 
     let mut c_matrix = Matrix::IJ(ij_matrix);
-    match solver.solve(&mut c_matrix, &rhs, &mut x) {
+    let c_rhs = Vector::IJ(rhs);
+    let mut c_x = Vector::IJ(x);
+    match solver.solve(&mut c_matrix, &c_rhs, &mut c_x) {
         Ok(info) => println!("Solver has converged: {}", info),
         Err(e) => println!("error {:?}", e),
     }

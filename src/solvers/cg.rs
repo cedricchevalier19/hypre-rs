@@ -169,6 +169,13 @@ impl LinearSolver for PCGSolver {
         x: &mut Vector,
     ) -> HypreResult<IterativeSolverStatus> {
         unsafe {
+            check_hypre!(HYPRE_PCGSetup(
+                self.internal_solver,
+                mat.get_internal()?,
+                rhs.get_internal()?,
+                x.get_internal()?,
+            ));
+
             match HYPRE_PCGSolve(
                 self.internal_solver,
                 mat.get_internal()?,

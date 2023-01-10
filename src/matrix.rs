@@ -18,17 +18,6 @@ pub struct CSRMatrix {
     internal_matrix: HYPRE_ParCSRMatrix,
 }
 
-#[derive(Debug, Clone, Copy)]
-pub struct NNZ<Id, V>
-where
-    Id: Copy,
-    V: Copy,
-{
-    pub row_id: Id,
-    pub col_id: Id,
-    pub value: V,
-}
-
 impl CSRMatrix {
     fn new(
         comm: &impl Communicator,
@@ -125,19 +114,19 @@ impl IJMatrix {
     /// use hypre_rs::matrix::IJMatrix;
     /// # let universe = mpi::initialize().unwrap();
     /// # let mpi_comm = universe.world();
-    /// let global_size: usize = 100;
+    /// let global_size: u32 = 100;
     /// // Cannot panic as global_size is properly represented on usize
-    /// let step: usize = (global_size as i64 / mpi_comm.size() as i64).try_into().unwrap();
-    /// let begin: usize = mpi_comm.rank() as usize * step;
-    /// let end = (begin + step).clamp(0usize, global_size);
+    /// let step: u32 = (global_size as i64 / mpi_comm.size() as i64).try_into().unwrap();
+    /// let begin: u32 = (mpi_comm.rank()  * step as i32).try_into().unwrap();
+    /// let end = (begin + step).clamp(0u32, global_size);
     /// let ij_matrix = IJMatrix::new(&mpi_comm, (begin, end), (begin, end))?;
     /// # Ok(())
     /// # }
     /// ```
     pub fn new(
         comm: &impl mpi::topology::Communicator,
-        rows: (usize, usize),
-        cols: (usize, usize),
+        rows: (u32, u32),
+        cols: (u32, u32),
     ) -> HypreResult<Self> {
         let mut out = Self {
             internal_matrix: null_mut(),
@@ -175,19 +164,22 @@ impl IJMatrix {
     /// # extern crate hypre_rs;
     /// # use mpi::initialize;
     /// # use mpi::topology::Communicator;
-    /// use hypre_rs::matrix::{IJMatrix, NNZ};
+    /// use hypre_rs::matrix::IJMatrix;
     /// # let universe = mpi::initialize().unwrap();
     /// # let mpi_comm = universe.world();
-    /// # let global_size: usize = 100;
+    /// # let global_size: u32 = 100;
     /// // Cannot panic as global_size is properly represented on usize
-    /// # let step: usize = (global_size as i64 / mpi_comm.size() as i64).try_into().unwrap();
-    /// # let local_begin: usize = mpi_comm.rank() as usize * step;
-    /// # let local_end = (local_begin + step).clamp(0usize, global_size);
+    /// # let step: u32 = (global_size as i64 / mpi_comm.size() as i64).try_into().unwrap();
+    /// # let local_begin: u32 = (mpi_comm.rank() * step as i32).try_into().unwrap();
+    /// # let local_end = (local_begin + step).clamp(0u32, global_size);
     /// let mut ij_matrix = IJMatrix::new(&mpi_comm, (local_begin, local_end), (local_begin, local_end))?;
-    /// ij_matrix.add_elements::<i32, f64>((local_begin..local_end).map(|id| {NNZ::<i32, f64>{row_id: id as i32, col_id: id as i32, value: 1.0}}))
+    /// ij_matrix.add_elements::<u32, f64>((local_begin..local_end).map(|id| (id, id, 1.0f64)))
     /// # }
     /// ```
-    pub fn add_elements<Id, V>(&mut self, nnz: impl Iterator<Item = NNZ<Id, V>>) -> HypreResult<()>
+    pub fn add_elements<Id, V>(
+        &mut self,
+        nnz: impl IntoIterator<Item = (Id, Id, V)>,
+    ) -> HypreResult<()>
     where
         Id: Copy + TryInto<HYPRE_BigInt>,
         V: Copy + TryInto<HYPRE_Complex>,
@@ -198,9 +190,9 @@ impl IJMatrix {
             .into_iter()
             .map(|nnz| {
                 (
-                    nnz.row_id.try_into().unwrap_or_default(),
-                    nnz.col_id.try_into().unwrap_or_default(),
-                    nnz.value.try_into().unwrap_or_default(),
+                    nnz.0.try_into().unwrap_or_default(),
+                    nnz.1.try_into().unwrap_or_default(),
+                    nnz.2.try_into().unwrap_or_default(),
                 )
             })
             .multiunzip();
