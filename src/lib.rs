@@ -1,50 +1,64 @@
-use enum_dispatch::enum_dispatch;
+//! hypre linear solvers in Rust
+//!
+//! This crate provides a Rust designed interface on [hypre] library.
+//!
+//! # Motivating example
+//!
+//! Here is a small example of a call to hypre's CG solver.
+//! ```
+//! # fn main() -> Result<(), hypre_rs::HypreError> {
+//! extern crate hypre_rs;
+//! # use mpi::initialize;
+//! # use mpi::topology::Communicator;
+//! use hypre_rs::{Matrix, Vector};
+//! use hypre_rs::matrix::IJMatrix;
+//! use hypre_rs::vector::IJVector;
+//! use hypre_rs::solvers::{PCGSolverConfigBuilder, PCGSolver, Solver};
+//! use hypre_rs::Vector::IJ;
+//! use crate::hypre_rs::solvers::LinearSolver;
+//!
+//! let mpi_comm = mpi::initialize().unwrap().world();
+//!
+//! let matrix = Matrix::IJ(IJMatrix::new(&mpi_comm, (0, 12), (0, 12))?);
+//! let rhs = Vector::IJ(IJVector::new(&mpi_comm, (0, 12))?);
+//! let b = Vector::IJ(IJVector::new(&mpi_comm, (0,12))?);
+//!
+//! // CG solver parameters
+//! let my_parameters = PCGSolverConfigBuilder::default()
+//!             .tol(1e-9)
+//!             .max_iters(500usize)
+//!             .two_norm(true)
+//!             .recompute_residual_period(8usize)
+//!             .build()?;
+//!
+//! // Create new CG solver with previous parameters
+//! let solver = Solver::CG(PCGSolver::new(&mpi_comm, my_parameters)?);
+//!
+//! match solver.solve(matrix, rhs, b) {
+//!     Ok(info) => println!("Solver has converged: {}", info),
+//!     Err(e) => return Err(e),
+//! }
+//!
+//! # Ok(())
+//! # }
+//! ```
 
-mod matrix;
-mod solvers;
+#![warn(
+    missing_copy_implementations,
+    missing_debug_implementations,
+    rust_2018_idioms
+)]
 
-#[enum_dispatch]
-trait LinearSolver {
-    fn solve(self);
-    fn set_precond(&mut self);
-}
+pub mod error;
+#[macro_use]
+mod utils;
+// Macros from utils are now available.
 
-struct CGSolver;
+pub mod matrix;
+pub mod solvers;
+pub mod vector;
 
-impl LinearSolver for CGSolver {
-    fn solve(self) {
-        todo!()
-    }
-
-    fn set_precond(&mut self) {
-        todo!()
-    }
-}
-
-struct AMGSolver;
-
-impl LinearSolver for AMGSolver {
-    fn solve(self) {
-        todo!()
-    }
-
-    fn set_precond(&mut self) {
-        todo!()
-    }
-}
-
-#[enum_dispatch(LinearSolver)]
-enum Solver {
-    CG(CGSolver),
-    AMG(AMGSolver),
-}
-
-#[cfg(test)]
-mod tests {
-    use super::*;
-    #[test]
-    fn it_works() {
-        let solver: Solver = CGSolver {}.into();
-        solver.solve();
-    }
-}
+type HypreResult<T> = Result<T, error::HypreError>;
+pub use error::HypreError;
+pub use matrix::Matrix;
+pub use vector::Vector;
