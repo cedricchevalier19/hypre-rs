@@ -15,7 +15,3 @@ hypre-sys = {path="hypre-sys", version= "0.1"}
 mpi = { version = "0.6", features = [] }
 thiserror = "1.0"
 itertools= "0.10"
-
-[patch.crates-io]
-mpi = {path = "rsmpi"}
-mpi-sys = {path = "rsmpi/mpi-sys" }
