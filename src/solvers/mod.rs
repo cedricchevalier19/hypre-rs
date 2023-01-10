@@ -1,5 +1,4 @@
 use enum_dispatch::enum_dispatch;
-use hypre_sys::HYPRE_Vector;
 
 macro_rules! set_parameter {
     ( $func:expr, $obj:expr, $param:expr ) => {{
@@ -63,7 +62,12 @@ impl fmt::Display for IterativeSolverStatus {
 
 #[enum_dispatch]
 pub trait LinearSolver {
-    fn solve(&self, mat: &mut Matrix, rhs: &Vector, x: &mut Vector) -> HypreResult<IterativeSolverStatus>;
+    fn solve(
+        &self,
+        mat: &mut Matrix,
+        rhs: &Vector,
+        x: &mut Vector,
+    ) -> HypreResult<IterativeSolverStatus>;
 }
 
 #[enum_dispatch(LinearSolver)]

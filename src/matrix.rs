@@ -11,7 +11,6 @@ use mpi::topology::Communicator;
 use std::num::TryFromIntError;
 use std::{ffi::c_void, ptr::null_mut};
 
-use itertools::izip;
 use itertools::Itertools;
 
 #[derive(Debug, Clone)]
@@ -75,7 +74,7 @@ impl CSRMatrix {
 impl Drop for CSRMatrix {
     fn drop(&mut self) {
         unsafe {
-//            HYPRE_ParCSRMatrixDestroy(self.internal_matrix);
+            HYPRE_ParCSRMatrixDestroy(self.internal_matrix);
         }
     }
 }

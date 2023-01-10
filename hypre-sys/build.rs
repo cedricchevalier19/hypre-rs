@@ -4,7 +4,6 @@ use std::env;
 use std::ffi::OsString;
 use std::path::{Path, PathBuf};
 
-
 fn env_inner(name: &str) -> Option<OsString> {
     let var = env::var_os(name);
     println!("cargo:rerun-if-env-changed={}", name);

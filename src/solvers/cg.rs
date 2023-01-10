@@ -162,7 +162,12 @@ impl PCGSolver {
 
 impl LinearSolver for PCGSolver {
     /// Solves a linear system using Preconditioned Conjugate Gradient algorithm.
-    fn solve(&self, mat: &mut Matrix, rhs: &Vector, x: &mut Vector) -> HypreResult<IterativeSolverStatus> {
+    fn solve(
+        &self,
+        mat: &mut Matrix,
+        rhs: &Vector,
+        x: &mut Vector,
+    ) -> HypreResult<IterativeSolverStatus> {
         unsafe {
             match HYPRE_PCGSolve(
                 self.internal_solver,

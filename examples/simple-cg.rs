@@ -3,7 +3,6 @@ use hypre_rs::matrix::{IJMatrix, NNZ};
 use hypre_rs::solvers::{LinearSolver, PCGSolver, PCGSolverConfigBuilder, Solver};
 use hypre_rs::vector::IJVector;
 use hypre_rs::{Matrix, Vector};
-use mpi::initialize;
 use mpi::topology::Communicator;
 
 fn main() {

@@ -2,9 +2,7 @@ use crate::error::HypreError;
 use crate::vector::Vector::IJ;
 use crate::HypreResult;
 use hypre_sys::*;
-use mpi::topology::Communicator;
-use std::num::TryFromIntError;
-use std::{ffi::c_void, ptr::null_mut};
+use std::ptr::null_mut;
 
 #[derive(Debug)]
 pub struct IJVector {
