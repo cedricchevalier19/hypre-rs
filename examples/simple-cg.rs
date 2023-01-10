@@ -26,9 +26,9 @@ fn main() {
     )
     .unwrap();
 
-    let mut nnz_buffer = Vec::<(u32, u32, f64)>::with_capacity(5);
     // Fill the matrix
     for row in local_begin..local_end {
+        let mut nnz_buffer = Vec::<(u32, u32, f64)>::with_capacity(5);
         if row >= mesh_size {
             nnz_buffer.push((row, row - mesh_size, -1.0));
         }
@@ -42,8 +42,9 @@ fn main() {
         if row + mesh_size < global_size {
             nnz_buffer.push((row, row + mesh_size, -1.0));
         }
-        ij_matrix.add_elements(nnz_buffer.iter().copied()).unwrap();
-        nnz_buffer.clear();
+        ij_matrix.add_elements(nnz_buffer.into_iter()).unwrap();
+        // Allow nnz_buffer to not disappear
+        //nnz_buffer.clear();
     }
 
     let mut rhs = IJVector::new(&mpi_comm, (local_begin, local_end)).unwrap();
