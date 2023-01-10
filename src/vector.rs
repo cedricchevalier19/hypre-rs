@@ -36,7 +36,7 @@ impl IJVector {
         Ok(out)
     }
 
-    fn get_internal(self) -> HypreResult<HYPRE_Vector> {
+    fn get_internal(&self) -> HypreResult<HYPRE_Vector> {
         Ok(self.internal as HYPRE_Vector)
     }
 }
@@ -59,7 +59,7 @@ pub enum Vector {
 }
 
 impl Vector {
-    pub(crate) fn get_internal(self) -> HypreResult<HYPRE_Vector> {
+    pub(crate) fn get_internal(&self) -> HypreResult<HYPRE_Vector> {
         match self {
             IJ(m) => m.get_internal(),
         }

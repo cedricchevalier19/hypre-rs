@@ -63,7 +63,7 @@ impl fmt::Display for IterativeSolverStatus {
 
 #[enum_dispatch]
 pub trait LinearSolver {
-    fn solve(&self, mat: Matrix, rhs: Vector, x: Vector) -> HypreResult<IterativeSolverStatus>;
+    fn solve(&self, mat: &mut Matrix, rhs: &Vector, x: &mut Vector) -> HypreResult<IterativeSolverStatus>;
 }
 
 #[enum_dispatch(LinearSolver)]

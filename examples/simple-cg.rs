@@ -37,7 +37,7 @@ fn main() {
         .unwrap();
 
     let rhs = Vector::IJ(IJVector::new(&mpi_comm, (local_begin, local_end)).unwrap());
-    let b = Vector::IJ(IJVector::new(&mpi_comm, (local_begin, local_end)).unwrap());
+    let mut x = Vector::IJ(IJVector::new(&mpi_comm, (local_begin, local_end)).unwrap());
 
     // CG solver parameters
     let my_parameters = PCGSolverConfigBuilder::default()
@@ -51,7 +51,8 @@ fn main() {
     // Create new CG solver with previous parameters
     let solver = Solver::CG(PCGSolver::new(&mpi_comm, my_parameters).unwrap());
 
-    match solver.solve(Matrix::IJ(ij_matrix), rhs, b) {
+    let mut c_matrix = Matrix::IJ(ij_matrix);
+    match solver.solve(&mut c_matrix, &rhs, &mut x) {
         Ok(info) => println!("Solver has converged: {}", info),
         Err(e) => println!("error {:?}", e),
     }

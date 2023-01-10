@@ -67,7 +67,7 @@ impl CSRMatrix {
         }
     }
 
-    fn get_internal(self) -> HypreResult<HYPRE_Matrix> {
+    fn get_internal(&self) -> HypreResult<HYPRE_Matrix> {
         Ok(self.internal_matrix as HYPRE_Matrix)
     }
 }
@@ -219,6 +219,16 @@ impl IJMatrix {
         }
         Ok(())
     }
+
+    fn get_internal(&mut self) -> HypreResult<HYPRE_Matrix> {
+        let mut out: HYPRE_Matrix = null_mut();
+        unsafe {
+            check_hypre!(HYPRE_IJMatrixAssemble(self.internal_matrix));
+            let csr_mat_ptr = &mut out as *mut _ as *mut *mut c_void;
+            check_hypre!(HYPRE_IJMatrixGetObject(self.internal_matrix, csr_mat_ptr));
+        }
+        Ok(out)
+    }
 }
 
 impl Drop for IJMatrix {
@@ -241,9 +251,9 @@ pub enum Matrix {
 }
 
 impl Matrix {
-    pub(crate) fn get_internal(self) -> HypreResult<HYPRE_Matrix> {
+    pub(crate) fn get_internal(&mut self) -> HypreResult<HYPRE_Matrix> {
         match self {
-            IJ(m) => <IJMatrix as TryInto<CSRMatrix>>::try_into(m)?.get_internal(),
+            IJ(m) => m.get_internal(),
             ParCSR(m) => m.get_internal(),
         }
     }
