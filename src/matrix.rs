@@ -176,10 +176,7 @@ impl IJMatrix {
     /// ij_matrix.add_elements::<u32, f64>((local_begin..local_end).map(|id| (id, id, 1.0f64)))
     /// # }
     /// ```
-    pub fn add_elements<Id, V>(
-        &mut self,
-        nnz: impl IntoIterator<Item = (Id, Id, V)>,
-    ) -> HypreResult<()>
+    pub fn add_elements<Id, V>(&mut self, nnz: impl Iterator<Item = (Id, Id, V)>) -> HypreResult<()>
     where
         Id: Copy + TryInto<HYPRE_BigInt>,
         V: Copy + TryInto<HYPRE_Complex>,

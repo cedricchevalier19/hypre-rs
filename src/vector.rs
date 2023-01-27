@@ -46,10 +46,7 @@ impl IJVector {
         Ok(out)
     }
 
-    pub fn add_elements<'a, Id, V>(
-        &mut self,
-        nnz: impl IntoIterator<Item = (Id, V)>,
-    ) -> HypreResult<()>
+    pub fn add_elements<'a, Id, V>(&mut self, nnz: impl Iterator<Item = (Id, V)>) -> HypreResult<()>
     where
         Id: Copy + TryInto<HYPRE_BigInt> + 'a,
         V: Copy + TryInto<HYPRE_Complex> + 'a,
