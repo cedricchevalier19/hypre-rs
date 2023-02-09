@@ -3,7 +3,7 @@ use derive_builder::Builder;
 use std::ptr::null_mut;
 
 use crate::error::HypreError;
-use crate::solvers::{IterativeSolverStatus, LinearSolver};
+use crate::solvers::{BoomerAMG, IterativeSolverStatus, LinearPreconditioner, LinearSolver};
 
 use crate::matrix::Matrix;
 use crate::{HypreResult, Vector};
@@ -26,7 +26,7 @@ pub struct PCGSolver {
 /// If res_tol is set, $$||r_\text{new} - r_\text{old}||_C < \text{tol}_r * ||b||_C$$ is used.
 ///
 /// If two_norm is set, $$||.||_2$$ norm is used.
-#[derive(Default, Debug, Clone, Builder, Copy)]
+#[derive(Default, Debug, Clone, Builder)]
 #[builder(setter(into, strip_option), default)]
 #[builder(build_fn(validate = "Self::validate", error = "HypreError"))]
 pub struct PCGSolverConfig {
@@ -50,6 +50,8 @@ pub struct PCGSolverConfig {
     pub recompute_residual: Option<bool>,
     /// Periodically recompute an explicit residual
     pub recompute_residual_period: Option<usize>,
+    /// Preconditioner
+    pub precond: Option<BoomerAMG>,
 }
 
 macro_rules! check_positive_parameter {
@@ -133,6 +135,10 @@ impl PCGSolver {
             self.internal_solver,
             config.recompute_residual_period
         ];
+
+        // if let Some(precond) = config.precond {
+        //     check_hypre!(unsafe { HYPRE_PCGSetPrecond(self.internal_solver, precond.get_precond(), precond.get_precond_setup(), precond.get_internal()) });
+        // }
 
         Ok(self)
     }

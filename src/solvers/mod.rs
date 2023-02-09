@@ -30,6 +30,7 @@ use crate::{HypreResult, Vector};
 pub use cg::PCGSolver;
 pub use cg::PCGSolverConfig;
 pub use cg::PCGSolverConfigBuilder;
+use hypre_sys::{HYPRE_BoomerAMGSetup, HYPRE_BoomerAMGSolve, HYPRE_PtrToSolverFcn, HYPRE_Solver};
 
 /// Solver status information
 #[derive(Debug, Clone, Copy)]
@@ -61,6 +62,12 @@ impl fmt::Display for IterativeSolverStatus {
 }
 
 #[enum_dispatch]
+pub trait LinearPreconditioner {
+    fn get_precond(&self) -> HYPRE_PtrToSolverFcn;
+    fn get_precond_setup(&self) -> HYPRE_PtrToSolverFcn;
+    fn get_internal(&self) -> HYPRE_Solver;
+}
+
 pub trait LinearSolver {
     fn solve(
         &self,
@@ -70,10 +77,25 @@ pub trait LinearSolver {
     ) -> HypreResult<IterativeSolverStatus>;
 }
 
-#[enum_dispatch(LinearSolver)]
-#[derive(Debug)]
-pub enum Solver {
-    CG(PCGSolver),
+pub trait SymmetricLinearSolver: LinearSolver {}
+
+#[derive(Default, Debug, Clone)]
+pub struct BoomerAMG {}
+
+impl LinearPreconditioner for BoomerAMG {
+    fn get_precond(&self) -> HYPRE_PtrToSolverFcn {
+        let ptr = HYPRE_BoomerAMGSolve as *const HYPRE_PtrToSolverFcn;
+        unsafe { *ptr }
+    }
+
+    fn get_precond_setup(&self) -> HYPRE_PtrToSolverFcn {
+        let ptr = HYPRE_BoomerAMGSetup as *const HYPRE_PtrToSolverFcn;
+        unsafe { *ptr }
+    }
+
+    fn get_internal(&self) -> HYPRE_Solver {
+        todo!()
+    }
 }
 
 #[cfg(test)]
@@ -82,7 +104,7 @@ mod tests {
     #[test]
     fn it_works() {
         let mpi_comm = mpi::initialize().unwrap().world();
-        let _solver = Solver::CG(PCGSolver::new(&mpi_comm, Default::default()).unwrap());
+        // let _solver = Solver::CG(PCGSolver::new(&mpi_comm, Default::default()).unwrap());
         //solver.solve();
     }
 }
