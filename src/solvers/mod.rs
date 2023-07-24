@@ -1,5 +1,3 @@
-use enum_dispatch::enum_dispatch;
-
 macro_rules! set_parameter {
     ( $func:expr, $obj:expr, $param:expr ) => {{
         if let Some(p_value) = $param {
@@ -11,11 +9,9 @@ macro_rules! set_parameter {
 macro_rules! get_parameter {
     ( $func:expr, $obj:expr, $t:ty ) => {{
         let mut p_t: $t = Default::default();
-        let err = unsafe { $func($obj, &mut p_t) };
-        if err != 0 {
-            Err(HypreError::new(err))
-        } else {
-            Ok(p_t.try_into().unwrap())
+        match unsafe { $func($obj, &mut p_t) } {
+            0 => Ok(p_t.try_into().unwrap()),
+            err => Err(HypreError::new(err)),
         }
     }};
 }
@@ -28,11 +24,11 @@ use std::fmt::Formatter;
 
 use crate::matrix::Matrix;
 use crate::{HypreResult, Vector};
+pub use boomer_amg::BoomerAMG;
 pub use cg::PCGSolver;
 pub use cg::PCGSolverConfig;
 pub use cg::PCGSolverConfigBuilder;
-pub use boomer_amg::BoomerAMG;
-use hypre_sys::{HYPRE_BoomerAMGSetup, HYPRE_BoomerAMGSolve, HYPRE_PtrToSolverFcn, HYPRE_Solver};
+use hypre_sys::{HYPRE_PtrToSolverFcn, HYPRE_Solver};
 
 /// Solver status information
 #[derive(Debug, Clone, Copy)]
@@ -125,7 +121,7 @@ mod tests {
     use super::*;
     #[test]
     fn it_works() {
-        let mpi_comm = mpi::initialize().unwrap().world();
+        let _mpi_comm = mpi::initialize().unwrap().world();
         // let _solver = Solver::CG(PCGSolver::new(&mpi_comm, Default::default()).unwrap());
         //solver.solve();
     }

@@ -1,8 +1,6 @@
 extern crate hypre_rs;
 use hypre_rs::matrix::IJMatrix;
-use hypre_rs::solvers::{
-    BoomerAMG, LinearSolver, PCGSolver, PCGSolverConfigBuilder, SymmetricLinearSolver,
-};
+use hypre_rs::solvers::{BoomerAMG, PCGSolver, PCGSolverConfigBuilder, SymmetricLinearSolver};
 use hypre_rs::vector::IJVector;
 use hypre_rs::{Matrix, Vector};
 use mpi::topology::Communicator;

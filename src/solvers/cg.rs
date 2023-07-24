@@ -4,8 +4,8 @@ use std::ptr::null_mut;
 
 use crate::error::HypreError;
 use crate::solvers::{
-    boomer_amg::BoomerAMG, IterativeSolverStatus, LinearPreconditioner, LinearSolver,
-    SymmetricLinearPreconditioner, SymmetricLinearSolver,
+    boomer_amg::BoomerAMG, IterativeSolverStatus, SymmetricLinearPreconditioner,
+    SymmetricLinearSolver,
 };
 
 use crate::matrix::Matrix;

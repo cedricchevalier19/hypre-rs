@@ -1,8 +1,10 @@
 macro_rules! check_hypre {
     ( $res:expr) => {{
-        let res = $res;
-        if res != 0 {
-            return Err(HypreError::new(res));
+        match $res {
+            0 => {}
+            res => {
+                return Err(HypreError::new(res));
+            }
         }
     }};
 }
