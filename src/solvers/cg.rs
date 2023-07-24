@@ -3,7 +3,10 @@ use derive_builder::Builder;
 use std::ptr::null_mut;
 
 use crate::error::HypreError;
-use crate::solvers::{BoomerAMG, IterativeSolverStatus, LinearPreconditioner, LinearSolver};
+use crate::solvers::{
+    boomer_amg::BoomerAMG, IterativeSolverStatus, LinearPreconditioner, LinearSolver,
+    SymmetricLinearPreconditioner, SymmetricLinearSolver,
+};
 
 use crate::matrix::Matrix;
 use crate::{HypreResult, Vector};
@@ -166,7 +169,19 @@ impl PCGSolver {
     }
 }
 
-impl LinearSolver for PCGSolver {
+impl SymmetricLinearSolver for PCGSolver {
+    fn set_precond(&mut self, precond: impl SymmetricLinearPreconditioner) {
+        let internal_precond = precond.precond_descriptor();
+        unsafe {
+            HYPRE_PCGSetPrecond(
+                self.internal_solver,
+                internal_precond.get_precond(),
+                internal_precond.get_precond_setup(),
+                internal_precond.get_internal(),
+            );
+        }
+    }
+
     /// Solves a linear system using Preconditioned Conjugate Gradient algorithm.
     fn solve(
         &self,

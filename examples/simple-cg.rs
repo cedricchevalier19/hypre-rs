@@ -1,6 +1,8 @@
 extern crate hypre_rs;
 use hypre_rs::matrix::IJMatrix;
-use hypre_rs::solvers::{LinearSolver, PCGSolver, PCGSolverConfigBuilder};
+use hypre_rs::solvers::{
+    BoomerAMG, LinearSolver, PCGSolver, PCGSolverConfigBuilder, SymmetricLinearSolver,
+};
 use hypre_rs::vector::IJVector;
 use hypre_rs::{Matrix, Vector};
 use mpi::topology::Communicator;
@@ -67,7 +69,10 @@ fn main() {
         .unwrap();
 
     // Create new CG solver with previous parameters
-    let solver = PCGSolver::new(&mpi_comm, my_parameters).unwrap();
+    let mut solver = PCGSolver::new(&mpi_comm, my_parameters).unwrap();
+
+    let precond = BoomerAMG::new();
+    solver.set_precond(precond.unwrap());
 
     let mut c_matrix = Matrix::IJ(ij_matrix);
     let c_rhs = Vector::IJ(rhs);

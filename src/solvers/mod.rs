@@ -20,6 +20,7 @@ macro_rules! get_parameter {
     }};
 }
 
+mod boomer_amg;
 mod cg;
 
 use std::fmt;
@@ -30,6 +31,7 @@ use crate::{HypreResult, Vector};
 pub use cg::PCGSolver;
 pub use cg::PCGSolverConfig;
 pub use cg::PCGSolverConfigBuilder;
+pub use boomer_amg::BoomerAMG;
 use hypre_sys::{HYPRE_BoomerAMGSetup, HYPRE_BoomerAMGSolve, HYPRE_PtrToSolverFcn, HYPRE_Solver};
 
 /// Solver status information
@@ -61,12 +63,28 @@ impl fmt::Display for IterativeSolverStatus {
     }
 }
 
-#[enum_dispatch]
-pub trait LinearPreconditioner {
+pub trait InternalLinearPreconditioner {
     fn get_precond(&self) -> HYPRE_PtrToSolverFcn;
     fn get_precond_setup(&self) -> HYPRE_PtrToSolverFcn;
     fn get_internal(&self) -> HYPRE_Solver;
 }
+
+pub trait LinearPreconditioner {
+    fn precond_descriptor(&self) -> &dyn InternalLinearPreconditioner;
+}
+
+pub trait SymmetricLinearPreconditioner {
+    fn precond_descriptor(&self) -> &dyn InternalLinearPreconditioner;
+}
+
+// impl<T> LinearPreconditioner for T
+// where
+//     T: SymmetricLinearPreconditioner,
+// {
+//     fn precond_descriptor(&self) -> &dyn InternalLinearPreconditioner {
+//         self.precond_descriptor()
+//     }
+// }
 
 pub trait LinearSolver {
     fn solve(
@@ -77,26 +95,30 @@ pub trait LinearSolver {
     ) -> HypreResult<IterativeSolverStatus>;
 }
 
-pub trait SymmetricLinearSolver: LinearSolver {}
+pub trait SymmetricLinearSolver {
+    fn set_precond(&mut self, precond: impl SymmetricLinearPreconditioner);
 
-#[derive(Default, Debug, Clone)]
-pub struct BoomerAMG {}
-
-impl LinearPreconditioner for BoomerAMG {
-    fn get_precond(&self) -> HYPRE_PtrToSolverFcn {
-        let ptr = HYPRE_BoomerAMGSolve as *const HYPRE_PtrToSolverFcn;
-        unsafe { *ptr }
-    }
-
-    fn get_precond_setup(&self) -> HYPRE_PtrToSolverFcn {
-        let ptr = HYPRE_BoomerAMGSetup as *const HYPRE_PtrToSolverFcn;
-        unsafe { *ptr }
-    }
-
-    fn get_internal(&self) -> HYPRE_Solver {
-        todo!()
-    }
+    fn solve(
+        &self,
+        mat: &mut Matrix,
+        rhs: &Vector,
+        x: &mut Vector,
+    ) -> HypreResult<IterativeSolverStatus>;
 }
+
+// impl<T> LinearSolver for T
+// where
+//     T: SymmetricLinearSolver,
+// {
+//     fn solve(
+//         &self,
+//         mat: &mut Matrix,
+//         rhs: &Vector,
+//         x: &mut Vector,
+//     ) -> HypreResult<IterativeSolverStatus> {
+//         self.solve(mat, rhs, x)
+//     }
+// }
 
 #[cfg(test)]
 mod tests {
