@@ -23,6 +23,10 @@ pub enum HypreError {
     UnknowError,
     #[error("Invalid parameter, should be positive")]
     InvalidParameterPositive,
+    #[error("Invalid parameter {0}")]
+    InvalidParameter(usize),
+    #[error("Invalid parameter, not compatible with symmetry")]
+    InvalidParameterSymmetry,
     #[error(transparent)]
     ConversionError(#[from] TryFromIntError),
     #[error(transparent)]
