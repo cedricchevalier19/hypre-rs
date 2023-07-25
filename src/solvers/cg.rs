@@ -57,16 +57,6 @@ pub struct PCGSolverConfig {
     pub precond: Option<BoomerAMG>,
 }
 
-macro_rules! check_positive_parameter {
-    ( $obj:expr, $param:ident) => {{
-        if let Some(Some($param)) = $obj.$param {
-            if $param < 0.into() {
-                return Err(HypreError::InvalidParameterPositive);
-            }
-        }
-    }};
-}
-
 impl PCGSolverConfigBuilder {
     /// Validates valid parameters for [PCGSolverConfig]
     fn validate(&self) -> HypreResult<()> {
