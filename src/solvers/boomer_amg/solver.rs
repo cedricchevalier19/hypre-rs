@@ -11,6 +11,7 @@ use std::ptr::null_mut;
 
 #[derive(Debug, Clone)]
 pub struct BoomerAMG {
+    /// Access to internal hypre solver from all boomer_amg module
     pub(super) internal_solver: HYPRE_Solver,
 }
 
