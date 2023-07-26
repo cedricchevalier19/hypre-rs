@@ -1,26 +1,25 @@
 use crate::{HypreError, HypreResult};
 use derive_builder::Builder;
 
-use hypre_sys::{
-    HYPRE_Int,
-};
+use hypre_sys::{HYPRE_BoomerAMGSetTol, HYPRE_Int};
+use crate::solvers::BoomerAMG;
 
 #[non_exhaustive]
-#[derive(Clone,Debug)]
+#[derive(Clone, Debug)]
 pub enum BoomerAMGRelToleranceType {
     RHS,
     R0,
 }
 
 #[non_exhaustive]
-#[derive(Clone,Debug)]
+#[derive(Clone, Debug)]
 pub enum BoomerAMGMeasureType {
     LOCAL,
     GLOBAL,
 }
 
 #[non_exhaustive]
-#[derive(Clone,Debug)]
+#[derive(Clone, Debug)]
 pub enum BoomerAMGNodalType {
     UnkownCoarsening,
     Frobenius,
@@ -31,7 +30,7 @@ pub enum BoomerAMGNodalType {
 }
 
 #[non_exhaustive]
-#[derive(Clone,Debug)]
+#[derive(Clone, Debug)]
 pub enum BoomerAMGNodalDiagType {
     NoTreatment,
     NegativeSum,
@@ -39,7 +38,7 @@ pub enum BoomerAMGNodalDiagType {
 }
 
 #[non_exhaustive]
-#[derive(Clone,Debug)]
+#[derive(Clone, Debug)]
 pub enum BoomerAMGInterpolationType {
     Classical,
     LeastSquare,
@@ -63,7 +62,7 @@ pub enum BoomerAMGInterpolationType {
 }
 
 #[non_exhaustive]
-#[derive(Clone,Debug)]
+#[derive(Clone, Debug)]
 pub enum BoomerAMGAggInterpolationType {
     TwoStageExtendedI,
     TwoStageStandard,
@@ -74,9 +73,8 @@ pub enum BoomerAMGAggInterpolationType {
     TwoStageExtendedEMatrixMatrix,
 }
 
-
 #[non_exhaustive]
-#[derive(Clone,Debug)]
+#[derive(Clone, Debug)]
 pub enum BoomerAMGCycleType {
     VCycle,
     WCycle,
@@ -84,14 +82,14 @@ pub enum BoomerAMGCycleType {
 }
 
 #[non_exhaustive]
-#[derive(Clone,Debug)]
+#[derive(Clone, Debug)]
 pub enum BoomerAMGRelaxOrder {
     Lexico,
     CFRelax,
 }
 
 #[non_exhaustive]
-#[derive(Clone,Debug)]
+#[derive(Clone, Debug)]
 pub enum SymmetricBoomerAMGRelaxType {
     Jacobi,
     HybridGaussSeidelSymm,
@@ -101,7 +99,7 @@ pub enum SymmetricBoomerAMGRelaxType {
 }
 
 #[non_exhaustive]
-#[derive(Clone,Debug)]
+#[derive(Clone, Debug)]
 pub enum BoomerAMGCoarsenType {
     /// Luby coarsening, parallel
     CLJP,
@@ -134,7 +132,7 @@ impl Default for BoomerAMGCoarsenType {
 }
 
 #[non_exhaustive]
-#[derive(Clone,Debug)]
+#[derive(Clone, Debug)]
 pub enum BoomerAMGRelaxType {
     /// Jacobi smoother
     Jacobi,
@@ -186,6 +184,91 @@ pub struct BoomerAMGConfig {
     pub max_iters: Option<usize>,
     /// Maximum number of iterations
     pub min_iters: Option<usize>,
+    /// AMG Cycle type
+    pub cycle_type: Option<BoomerAMGCycleType>,
+    /// Interpolation options
+    pub interpolation: Option<BoomerAMGInterpolationConfig>,
+    /// Relaxation options
+    pub relaxation: Option<BoomerAMGRelaxationConfig>,
+    /// Coarsening options
+    pub coarsening: Option<BoomerAMGCoarseningConfig>,
+}
+
+impl BoomerAMGConfigBuilder {
+    /// Validates valid parameters for [BoomerAMGConfig]
+    fn validate(&self) -> HypreResult<()> {
+        check_positive_parameter![self, tol];
+        Ok(())
+    }
+}
+
+impl BoomerAMGConfig {
+    fn apply(&self, amg: &mut BoomerAMG) -> HypreResult<()> {
+        set_parameter![HYPRE_BoomerAMGSetTol, amg.internal_solver, self.tol];
+        Ok(())
+    }
+}
+
+/// BoomerAMG Interpolation Configuration
+///
+#[derive(Default, Debug, Clone, Builder)]
+#[builder(setter(into, strip_option), default)]
+#[builder(build_fn(validate = "Self::validate", error = "HypreError"))]
+pub struct BoomerAMGInterpolationConfig {
+    /// Interpolation operator
+    pub interpolation_type: Option<BoomerAMGInterpolationType>,
+    /// Interpolation truncation factor
+    pub trunc_factor: Option<f64>,
+    /// Interpolation max number of elements per row
+    pub max_elements: Option<usize>,
+    /// Interpolation separation of weigths,
+    pub weights_separation: Option<bool>,
+    /// Aggressive Coarsening Interpolation
+    pub agg_type: Option<BoomerAMGAggInterpolationType>,
+    /// Aggressive Coarsening Interpolation truncation factor
+    pub agg_trunc_factor: Option<f64>,
+    /// Two stage interpolation truncation factor
+    pub p12_trunc_factor: Option<f64>,
+    /// Aggressive coarsening interpolation max number of elements by row
+    pub agg_max_elements: Option<usize>,
+    /// Max number of elements by row for P1 and P2 during 2-stage interpolation
+    pub p12_max_elements: Option<usize>,
+}
+
+impl BoomerAMGInterpolationConfigBuilder {
+    /// Validates valid parameters for [BoomerAMGInterpolationConfig]
+    fn validate(&self) -> HypreResult<()> {
+        Ok(())
+    }
+}
+
+/// BoomerAMG Interpolation Configuration
+///
+#[derive(Default, Debug, Clone, Builder)]
+#[builder(setter(into, strip_option), default)]
+#[builder(build_fn(validate = "Self::validate", error = "HypreError"))]
+pub struct BoomerAMGRelaxationConfig {
+    /// Number of sweeps
+    pub num_sweeps: Option<usize>,
+    /// Smoother to use
+    pub relax_type: Option<BoomerAMGRelaxType>,
+    /// Order in which the points are relaxed
+    pub relax_order: Option<BoomerAMGRelaxOrder>,
+}
+
+impl BoomerAMGRelaxationConfigBuilder {
+    /// Validates valid parameters for [BoomerAMGRelaxationConfig]
+    fn validate(&self) -> HypreResult<()> {
+        Ok(())
+    }
+}
+
+/// BoomerAMG Coarsening Configuration
+///
+#[derive(Default, Debug, Clone, Builder)]
+#[builder(setter(into, strip_option), default)]
+#[builder(build_fn(validate = "Self::validate", error = "HypreError"))]
+pub struct BoomerAMGCoarseningConfig {
     /// Maximum coarse size
     pub max_coarse_size: Option<usize>,
     /// Maximum coarse size
@@ -217,42 +300,14 @@ pub struct BoomerAMGConfig {
     pub nodal_type: Option<BoomerAMGNodalType>,
     /// Special diagonal treatment
     pub nodal_diag_type: Option<BoomerAMGNodalDiagType>,
-    /// Interpolation operator
-    pub interpolation_type: Option<BoomerAMGInterpolationType>,
-    /// Interpolation truncation factor
-    pub interpolation_trunc_factor: Option<f64>,
-    /// Interpolation max number of elements per row
-    pub interpolation_max_elements: Option<usize>,
-    /// Interpolation separation of weigths,
-    pub interpolation_weights_separation: Option<bool>,
-    /// Aggressive Coarsening Interpolation
-    pub agg_interpolation_type: Option<BoomerAMGAggInterpolationType>,
-    /// Aggressive Coarsening Interpolation truncation factor
-    pub agg_interpolation_trunc_factor: Option<f64>,
-    /// Two stage interpolation truncation factor
-    pub interpolation_p12_trunc_factor: Option<f64>,
-    /// Aggressive coarsening interpolation max number of elements by row
-    pub agg_interpolation_max_elements: Option<usize>,
-    /// Max number of elements by row for P1 and P2 during 2-stage interpolation
-    pub interpolation_p12_max_elements: Option<usize>,
-    /// AMG Cycle type
-    pub cycle_type: Option<BoomerAMGCycleType>,
-    /// Number of sweeps
-    pub num_sweeps: Option<usize>,
-    /// Smoother to use
-    pub relax_type: Option<BoomerAMGRelaxType>,
-    /// Order in which the points are relaxed
-    pub relax_order: Option<BoomerAMGRelaxOrder>,
 }
 
-impl BoomerAMGConfigBuilder {
-    /// Validates valid parameters for [BoomerAMGConfig]
+impl BoomerAMGCoarseningConfigBuilder {
+    /// Validates valid parameters for [BoomerAMGCoarseningConfig]
     fn validate(&self) -> HypreResult<()> {
-        check_positive_parameter![self, tol];
         Ok(())
     }
 }
-
 
 impl TryFrom<BoomerAMGRelaxType> for SymmetricBoomerAMGRelaxType {
     type Error = HypreError;
@@ -272,7 +327,6 @@ impl TryFrom<BoomerAMGRelaxType> for SymmetricBoomerAMGRelaxType {
         }
     }
 }
-
 
 impl TryFrom<usize> for BoomerAMGRelaxType {
     type Error = HypreError;
@@ -511,12 +565,6 @@ impl Into<HYPRE_Int> for BoomerAMGRelaxOrder {
         }
     }
 }
-
-
-
-
-
-
 
 impl TryFrom<usize> for BoomerAMGCoarsenType {
     type Error = HypreError;

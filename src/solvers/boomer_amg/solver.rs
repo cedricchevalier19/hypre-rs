@@ -1,5 +1,3 @@
-
-
 use crate::solvers::{InternalLinearPreconditioner, SymmetricLinearPreconditioner};
 use crate::{HypreError, HypreResult};
 use hypre_sys::{
@@ -9,12 +7,11 @@ use hypre_sys::{
     HYPRE_Int, HYPRE_Matrix, HYPRE_ParCSRMatrix, HYPRE_ParVector, HYPRE_PtrToSolverFcn,
     HYPRE_Solver, HYPRE_Vector,
 };
-use std::num::TryFromIntError;
 use std::ptr::null_mut;
 
 #[derive(Debug, Clone)]
 pub struct BoomerAMG {
-    internal_solver: HYPRE_Solver,
+    pub(super) internal_solver: HYPRE_Solver,
 }
 
 impl BoomerAMG {
