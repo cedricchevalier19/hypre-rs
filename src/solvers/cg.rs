@@ -1,4 +1,5 @@
 use derive_builder::Builder;
+use serde::Serialize;
 
 use std::ptr::null_mut;
 
@@ -30,6 +31,7 @@ pub struct PCGSolver {
 ///
 /// If two_norm is set, $$||.||_2$$ norm is used.
 #[derive(Default, Debug, Clone, Builder)]
+#[derive(Serialize)]
 #[builder(setter(into, strip_option), default)]
 #[builder(build_fn(validate = "Self::validate", error = "HypreError"))]
 pub struct PCGSolverConfig {
@@ -53,8 +55,6 @@ pub struct PCGSolverConfig {
     pub recompute_residual: Option<bool>,
     /// Periodically recompute an explicit residual
     pub recompute_residual_period: Option<usize>,
-    /// Preconditioner
-    pub precond: Option<BoomerAMG>,
 }
 
 impl PCGSolverConfigBuilder {

@@ -66,6 +66,8 @@ fn main() {
         .build()
         .unwrap();
 
+    println!("My parameters {}", serde_json::to_string(&my_parameters).unwrap());
+
     // Create new CG solver with previous parameters
     let mut solver = PCGSolver::new(&mpi_comm, my_parameters).unwrap();
 

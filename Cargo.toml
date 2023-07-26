@@ -15,3 +15,5 @@ hypre-sys = {path="hypre-sys", version= "0.1"}
 mpi = { version = "0.6", features = [] }
 thiserror = "1.0"
 itertools= "0.10"
+serde = {version = "1.0", features = ["derive"]}
+serde_json = "1.0"
