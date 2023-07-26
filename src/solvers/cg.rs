@@ -68,6 +68,47 @@ impl PCGSolverConfigBuilder {
     }
 }
 
+impl PCGSolverConfig {
+    fn apply(&self, pcg: &mut PCGSolver) -> HypreResult<()> {
+        set_parameter![HYPRE_PCGSetTol, pcg.internal_solver, self.tol];
+        set_parameter![HYPRE_PCGSetAbsoluteTol, pcg.internal_solver, self.abs_tol];
+        set_parameter![HYPRE_PCGSetResidualTol, pcg.internal_solver, self.res_tol];
+        set_parameter![HYPRE_PCGSetMaxIter, pcg.internal_solver, self.max_iters];
+        set_parameter![HYPRE_PCGSetTwoNorm, pcg.internal_solver, self.two_norm];
+        set_parameter![HYPRE_PCGSetRelChange, pcg.internal_solver, self.rel_change];
+        set_parameter![
+            HYPRE_PCGSetRecomputeResidual,
+            pcg.internal_solver,
+            self.recompute_residual
+        ];
+        set_parameter![
+            HYPRE_PCGSetRecomputeResidualP,
+            pcg.internal_solver,
+            self.recompute_residual_period
+        ];
+        Ok(())
+    }
+
+    fn observe(&mut self, pcg: &PCGSolver) -> HypreResult<()> {
+        self.tol = get_parameter![HYPRE_PCGGetTol, pcg.internal_solver, HYPRE_Real]?;
+        self.res_tol = get_parameter![HYPRE_PCGGetResidualTol, pcg.internal_solver, HYPRE_Real]?;
+        let max_iters: HYPRE_Int =
+            get_parameter![HYPRE_PCGGetMaxIter, pcg.internal_solver, HYPRE_Int]?;
+        if max_iters.is_negative() {
+            return Err(HypreError::HypreGenericError);
+        }
+        self.max_iters = Some(max_iters as usize);
+        let boolean: HYPRE_Int =
+            get_parameter![HYPRE_PCGGetTwoNorm, pcg.internal_solver, HYPRE_Int]?;
+        self.two_norm = Some(boolean != 0);
+
+        let boolean: HYPRE_Int =
+            get_parameter![HYPRE_PCGGetRelChange, pcg.internal_solver, HYPRE_Int]?;
+        self.rel_change = Some(boolean != 0);
+        Ok(())
+    }
+}
+
 /// Preconditioned Conjugate Gradient solver
 ///
 /// # Example
@@ -99,62 +140,15 @@ impl PCGSolver {
     }
 
     /// Changes the configuration of the solver
-    pub fn config(self, config: PCGSolverConfig) -> HypreResult<Self> {
-        set_parameter![HYPRE_PCGSetTol, self.internal_solver, config.tol];
-        set_parameter![
-            HYPRE_PCGSetAbsoluteTol,
-            self.internal_solver,
-            config.abs_tol
-        ];
-        set_parameter![
-            HYPRE_PCGSetResidualTol,
-            self.internal_solver,
-            config.res_tol
-        ];
-        set_parameter![HYPRE_PCGSetMaxIter, self.internal_solver, config.max_iters];
-        set_parameter![HYPRE_PCGSetTwoNorm, self.internal_solver, config.two_norm];
-        set_parameter![
-            HYPRE_PCGSetRelChange,
-            self.internal_solver,
-            config.rel_change
-        ];
-        set_parameter![
-            HYPRE_PCGSetRecomputeResidual,
-            self.internal_solver,
-            config.recompute_residual
-        ];
-        set_parameter![
-            HYPRE_PCGSetRecomputeResidualP,
-            self.internal_solver,
-            config.recompute_residual_period
-        ];
-
-        // if let Some(precond) = config.precond {
-        //     check_hypre!(unsafe { HYPRE_PCGSetPrecond(self.internal_solver, precond.get_precond(), precond.get_precond_setup(), precond.get_internal()) });
-        // }
-
+    pub fn config(mut self, config: PCGSolverConfig) -> HypreResult<Self> {
+        config.apply(&mut self)?;
         Ok(self)
     }
 
     /// Returns the configuration of the solver
     pub fn current_config(&self) -> HypreResult<PCGSolverConfig> {
         let mut config: PCGSolverConfig = Default::default();
-
-        config.tol = get_parameter![HYPRE_PCGGetTol, self.internal_solver, HYPRE_Real]?;
-        config.res_tol = get_parameter![HYPRE_PCGGetResidualTol, self.internal_solver, HYPRE_Real]?;
-        let max_iters: HYPRE_Int =
-            get_parameter![HYPRE_PCGGetMaxIter, self.internal_solver, HYPRE_Int]?;
-        if max_iters.is_negative() {
-            return Err(HypreError::HypreGenericError);
-        }
-        config.max_iters = Some(max_iters as usize);
-        let boolean: HYPRE_Int =
-            get_parameter![HYPRE_PCGGetTwoNorm, self.internal_solver, HYPRE_Int]?;
-        config.two_norm = Some(boolean != 0);
-
-        let boolean: HYPRE_Int =
-            get_parameter![HYPRE_PCGGetRelChange, self.internal_solver, HYPRE_Int]?;
-        config.rel_change = Some(boolean != 0);
+        config.observe(&self)?;
         Ok(config)
     }
 }

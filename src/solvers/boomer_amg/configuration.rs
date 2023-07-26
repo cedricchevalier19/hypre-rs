@@ -1,8 +1,8 @@
 use crate::{HypreError, HypreResult};
 use derive_builder::Builder;
 
-use hypre_sys::{HYPRE_BoomerAMGSetTol, HYPRE_Int};
 use crate::solvers::BoomerAMG;
+use hypre_sys::{HYPRE_BoomerAMGSetTol, HYPRE_Int};
 
 #[non_exhaustive]
 #[derive(Clone, Debug)]

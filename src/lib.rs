@@ -13,7 +13,7 @@
 //! use hypre_rs::{Matrix, Vector};
 //! use hypre_rs::matrix::IJMatrix;
 //! use hypre_rs::vector::IJVector;
-//! use hypre_rs::solvers::{PCGSolverConfigBuilder, PCGSolver, Solver};
+//! use hypre_rs::solvers::{PCGSolverConfigBuilder, PCGSolver, SymmetricLinearSolver};
 //! use hypre_rs::Vector::IJ;
 //! use crate::hypre_rs::solvers::LinearSolver;
 //!
@@ -32,7 +32,7 @@
 //!             .build()?;
 //!
 //! // Create new CG solver with previous parameters
-//! let solver = Solver::CG(PCGSolver::new(&mpi_comm, my_parameters)?);
+//! let solver = PCGSolver::new(&mpi_comm, my_parameters)?;
 //!
 //! match solver.solve(&mut matrix, &rhs, &mut x) {
 //!     Ok(info) => println!("Solver has converged: {}", info),
