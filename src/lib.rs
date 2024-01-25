@@ -14,8 +14,7 @@
 //! use hypre_rs::matrix::IJMatrix;
 //! use hypre_rs::vector::IJVector;
 //! use hypre_rs::solvers::{PCGSolverConfigBuilder, PCGSolver, Solver};
-//! use hypre_rs::Vector::IJ;
-//! use crate::hypre_rs::solvers::LinearSolver;
+//! use hypre_rs::solvers::LinearSolver;
 //!
 //! let mpi_comm = mpi::initialize().unwrap().world();
 //!
