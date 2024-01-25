@@ -12,6 +12,8 @@ jobs:
     runs-on: ubuntu-latest
 
     steps:
+      - name: Setup hypre
+        run: sudo apt install -y -q libhypre libhypre-dev
       - uses: actions/checkout@v2
       - name: Setup Rust
         uses: actions-rs/toolchain@v1
