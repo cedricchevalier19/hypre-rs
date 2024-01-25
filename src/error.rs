@@ -56,19 +56,19 @@ mod tests {
 
     #[test]
     fn error_create() {
-        match HypreError::new(hypre_sys::HYPRE_ERROR_MEMORY as i32) {
+        match HypreError::new(hypre_sys::HYPRE_ERROR_MEMORY as i64) {
             HypreMemoryError => {}
             _ => panic!("Incorrect error"),
         };
-        match HypreError::new(hypre_sys::HYPRE_ERROR_ARG as i32) {
+        match HypreError::new(hypre_sys::HYPRE_ERROR_ARG as i64) {
             HypreArgError(_) => {}
             _ => panic!("Incorrect error"),
         };
-        match HypreError::new(hypre_sys::HYPRE_ERROR_CONV as i32) {
+        match HypreError::new(hypre_sys::HYPRE_ERROR_CONV as i64) {
             HypreConvError => {}
             _ => panic!("Incorrect error"),
         };
-        match HypreError::new(hypre_sys::HYPRE_ERROR_GENERIC as i32) {
+        match HypreError::new(hypre_sys::HYPRE_ERROR_GENERIC as i64) {
             HypreGenericError => {}
             _ => panic!("Incorrect error"),
         };
