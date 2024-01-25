@@ -1,5 +1,4 @@
 use crate::{HypreError, HypreResult};
-use hypre_sys::{HYPRE_Finalize, HYPRE_Initialize};
 
 macro_rules! check_hypre {
     ( $res:expr) => {{
@@ -11,13 +10,18 @@ macro_rules! check_hypre {
 }
 
 pub fn initialize() -> HypreResult<()> {
-    unsafe {
-        check_hypre!(HYPRE_Initialize());
+    #[cfg(target_os = "macos")]
+    {
+        use hypre_sys::HYPRE_Initialize;
+        unsafe {
+            check_hypre!(HYPRE_Initialize());
+        }
     }
     Ok(())
 }
 
 pub fn finalize() -> HypreResult<()> {
+    use hypre_sys::HYPRE_Finalize;
     unsafe {
         check_hypre!(HYPRE_Finalize());
     }
