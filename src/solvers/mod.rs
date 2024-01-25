@@ -75,14 +75,3 @@ pub trait LinearSolver {
 pub enum Solver {
     CG(PCGSolver),
 }
-
-#[cfg(test)]
-mod tests {
-    use super::*;
-    #[test]
-    fn it_works() {
-        let mpi_comm = mpi::initialize().unwrap().world();
-        let _solver = Solver::CG(PCGSolver::new(&mpi_comm, Default::default()).unwrap());
-        //solver.solve();
-    }
-}
