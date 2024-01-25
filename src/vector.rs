@@ -46,6 +46,27 @@ impl IJVector {
         Ok(out)
     }
 
+    // Helper function for preparing non-zero elements
+    fn get_elements<'a, Id, V>(
+        &mut self,
+        nnz: impl Iterator<Item = (Id, V)>,
+    ) -> (Vec<HYPRE_BigInt>, Vec<HYPRE_Complex>)
+    where
+        Id: Copy + TryInto<HYPRE_BigInt> + 'a,
+        V: Copy + TryInto<HYPRE_Complex> + 'a,
+        HypreError: From<<Id as TryInto<HYPRE_BigInt>>::Error>,
+        HypreError: From<<V as TryInto<HYPRE_Complex>>::Error>,
+    {
+        nnz.into_iter()
+            .map(|nnz| {
+                (
+                    nnz.0.try_into().unwrap_or_default(),
+                    nnz.1.try_into().unwrap_or_default(),
+                )
+            })
+            .multiunzip()
+    }
+
     pub fn add_elements<'a, Id, V>(&mut self, nnz: impl Iterator<Item = (Id, V)>) -> HypreResult<()>
     where
         Id: Copy + TryInto<HYPRE_BigInt> + 'a,
@@ -53,15 +74,7 @@ impl IJVector {
         HypreError: From<<Id as TryInto<HYPRE_BigInt>>::Error>,
         HypreError: From<<V as TryInto<HYPRE_Complex>>::Error>,
     {
-        let (mut indices, mut values): (Vec<_>, Vec<_>) = nnz
-            .into_iter()
-            .map(|nnz| {
-                (
-                    nnz.0.try_into().unwrap_or_default(),
-                    nnz.1.try_into().unwrap_or_default(),
-                )
-            })
-            .multiunzip();
+        let (mut indices, mut values) = self.get_elements(nnz);
 
         unsafe {
             check_hypre!(HYPRE_IJVectorAddToValues(
