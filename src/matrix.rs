@@ -19,6 +19,13 @@ pub struct CSRMatrix {
 }
 
 impl CSRMatrix {
+    fn translate_into_hypre_bigints(sizes: &[usize]) -> Result<Vec<HYPRE_BigInt>, TryFromIntError> {
+        sizes
+            .iter()
+            .map(|&x| x.try_into())
+            .collect::<Result<Vec<HYPRE_BigInt>, TryFromIntError>>()
+    }
+
     fn new(
         comm: &impl Communicator,
         global_num_rows: usize,
@@ -29,14 +36,8 @@ impl CSRMatrix {
         let mut out = CSRMatrix {
             internal_matrix: null_mut(),
         };
-        let mut h_row_starts = row_starts
-            .iter()
-            .map(|&x| x.try_into())
-            .collect::<Result<Vec<HYPRE_BigInt>, TryFromIntError>>()?;
-        let mut h_col_starts: Vec<HYPRE_BigInt> = col_starts
-            .iter()
-            .map(|&x| x.try_into())
-            .collect::<Result<Vec<HYPRE_BigInt>, TryFromIntError>>()?;
+        let mut h_row_starts = Self::translate_into_hypre_bigints(row_starts)?;
+        let mut h_col_starts = Self::translate_into_hypre_bigints(col_starts)?;
         unsafe {
             match HYPRE_ParCSRMatrixCreate(
                 comm.as_raw(),

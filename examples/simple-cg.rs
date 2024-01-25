@@ -9,6 +9,8 @@ fn main() {
     let universe = mpi::initialize().unwrap();
     let mpi_comm = universe.world();
 
+    hypre_rs::initialize().unwrap();
+
     // Define matrix sizes
     let mesh_size: u32 = 10;
     let global_size = mesh_size * mesh_size;
@@ -76,4 +78,6 @@ fn main() {
         Ok(info) => println!("Solver has converged: {}", info),
         Err(e) => println!("error {:?}", e),
     }
+
+    hypre_rs::finalize().unwrap()
 }
