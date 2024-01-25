@@ -87,7 +87,8 @@ fn main() {
         .blocklist_item("(O?MPI|o?mpi)[\\w_]*")
         // Tell cargo to invalidate the built crate whenever any of the
         // included header files changed.
-        .parse_callbacks(Box::new(bindgen::CargoCallbacks::new()));
+        .parse_callbacks(Box::new(bindgen::CargoCallbacks::new()))
+        .generate_comments(false);
 
     for inc_dir in &[include_dir] {
         builder = builder
