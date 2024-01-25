@@ -114,6 +114,7 @@ impl IJMatrix {
     /// # use mpi::topology::Communicator;
     /// use hypre_rs::matrix::IJMatrix;
     /// # let universe = mpi::initialize().unwrap();
+    /// # hypre_rs::initialize()?;
     /// # let mpi_comm = universe.world();
     /// let global_size: u32 = 100;
     /// // Cannot panic as global_size is properly represented on usize
@@ -121,6 +122,7 @@ impl IJMatrix {
     /// let begin: u32 = (mpi_comm.rank()  * step as i32).try_into().unwrap();
     /// let end = (begin + step).clamp(0u32, global_size);
     /// let ij_matrix = IJMatrix::new(&mpi_comm, (begin, end), (begin, end))?;
+    /// # hypre_rs::finalize()?;
     /// # Ok(())
     /// # }
     /// ```
@@ -167,6 +169,7 @@ impl IJMatrix {
     /// # use mpi::topology::Communicator;
     /// use hypre_rs::matrix::IJMatrix;
     /// # let universe = mpi::initialize().unwrap();
+    /// # hypre_rs::initialize()?;
     /// # let mpi_comm = universe.world();
     /// # let global_size: u32 = 100;
     /// // Cannot panic as global_size is properly represented on usize
@@ -174,7 +177,8 @@ impl IJMatrix {
     /// # let local_begin: u32 = (mpi_comm.rank() * step as i32).try_into().unwrap();
     /// # let local_end = (local_begin + step).clamp(0u32, global_size);
     /// let mut ij_matrix = IJMatrix::new(&mpi_comm, (local_begin, local_end), (local_begin, local_end))?;
-    /// ij_matrix.add_elements::<u32, f64>((local_begin..local_end).map(|id| (id, id, 1.0f64)))
+    /// ij_matrix.add_elements::<u32, f64>((local_begin..local_end).map(|id| (id, id, 1.0f64)));
+    /// # hypre_rs::finalize()
     /// # }
     /// ```
     pub fn add_elements<Id, V>(&mut self, nnz: impl Iterator<Item = (Id, Id, V)>) -> HypreResult<()>
