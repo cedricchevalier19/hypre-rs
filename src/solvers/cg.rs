@@ -220,6 +220,8 @@ mod tests {
     #[test]
     fn config_test() {
         let mpi_comm = mpi::initialize().unwrap().world();
+        crate::initialize().unwrap();
+
         let solver = PCGSolver::new(&mpi_comm, Default::default()).unwrap();
 
         let parameters = solver.current_config();
@@ -238,5 +240,6 @@ mod tests {
         assert_eq!(my_parameters.tol, parameters.tol);
         assert_eq!(my_parameters.max_iters, parameters.max_iters);
         assert_eq!(my_parameters.two_norm, parameters.two_norm);
+        crate::finalize().unwrap();
     }
 }

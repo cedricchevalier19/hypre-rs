@@ -19,6 +19,8 @@
 //!
 //! let mpi_comm = mpi::initialize().unwrap().world();
 //!
+//! hypre_rs::initialize()?;
+//!
 //! let mut matrix = Matrix::IJ(IJMatrix::new(&mpi_comm, (0, 12), (0, 12))?);
 //! let rhs = Vector::IJ(IJVector::new(&mpi_comm, (0, 12))?);
 //! let mut x = Vector::IJ(IJVector::new(&mpi_comm, (0,12))?);
@@ -39,6 +41,7 @@
 //!     Err(e) => return Err(e),
 //! }
 //!
+//! hypre_rs::finalize()?;
 //! # Ok(())
 //! # }
 //! ```
@@ -62,3 +65,6 @@ type HypreResult<T> = Result<T, error::HypreError>;
 pub use error::HypreError;
 pub use matrix::Matrix;
 pub use vector::Vector;
+
+pub use utils::finalize;
+pub use utils::initialize;
