@@ -12,6 +12,6 @@ edition = "2021"
 derive_builder = "0.11"
 enum_dispatch = "0.3"
 hypre-sys = {path="hypre-sys", version= "0.1"}
-mpi = { version = "0.6", features = [] }
+mpi = { version = "0.7", features = [] }
 thiserror = "1.0"
-itertools= "0.10"
+itertools= "0.12"

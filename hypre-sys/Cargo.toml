@@ -9,4 +9,4 @@ edition = "2021"
 mpi-sys = "0.2"
 
 [build-dependencies]
-bindgen = "0.60"
+bindgen = "0.69"
