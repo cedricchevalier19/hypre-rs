@@ -16,7 +16,8 @@
 //! use hypre_rs::solvers::{PCGSolverConfigBuilder, PCGSolver, Solver};
 //! use hypre_rs::solvers::LinearSolver;
 //!
-//! let mpi_comm = mpi::initialize().unwrap().world();
+//! let universe = mpi::initialize().unwrap();
+//! let mpi_comm = universe.world();
 //!
 //! hypre_rs::initialize()?;
 //!

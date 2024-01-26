@@ -90,11 +90,9 @@ fn main() {
         .parse_callbacks(Box::new(bindgen::CargoCallbacks::new()))
         .generate_comments(false);
 
-    for inc_dir in &[include_dir] {
-        builder = builder
-            .clang_arg("-I")
-            .clang_arg(inc_dir.display().to_string());
-    }
+    builder = builder
+        .clang_arg("-I")
+        .clang_arg(include_dir.display().to_string());
 
     let bindings = builder
         // The input header we would like to generate
