@@ -38,3 +38,9 @@ For a programmatic approach, set the `HYPRE_DIR` environment variable in your `~
 [env]
 HYPRE_DIR = "/opt/hypre"
 ```
+
+
+## License
+This project is licensed under dual MIT/Apache-2.0 license. See the [LICENSE-MIT](LICENSE-MIT) and [LICENSE-APACHE](LICENSE-APACHE) files for details.
+
+The SPDX license identifier for the license chosen is: `MIT OR Apache-2.0`.
