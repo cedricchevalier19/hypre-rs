@@ -17,23 +17,11 @@ jobs:
     steps:
       - name: Setup hypre
         run: sudo apt install -y -q libhypre libhypre-dev
-      - uses: actions/checkout@v2
-      - name: Setup Rust
-        uses: actions-rs/toolchain@v1
-        with:
-          toolchain: stable
-          components: clippy
-          override: true
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@stable
       - name: Check
-        uses: actions-rs/cargo@v1
-        with:
-          command: check
+        run : cargo check --all-features
       - name: Lint
-        uses: actions-rs/clippy-check@v2
-        with:
-          token: ${{ secrets.GITHUB_TOKEN }}
-          args: -- --no-deps # --D warnings
+        run: cargo clippy --all-features -- --no-deps # -D warnings
       - name: Test
-        uses: actions-rs/cargo@v1
-        with:
-          command: test
+        run: cargo test --all-features
