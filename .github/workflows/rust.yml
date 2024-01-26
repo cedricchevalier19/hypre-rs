@@ -19,8 +19,13 @@ jobs:
         run: sudo apt install -y -q libhypre libhypre-dev
       - uses: actions/checkout@v4
       - uses: dtolnay/rust-toolchain@stable
+        with:
+          components: clippy
       - name: Check
-        run : cargo check --all-features
+        run: cargo check --all-features
+      - uses: clechasseur/rs-clippy-check@v3
+        with:
+          args: --all-features
       - name: Lint
         run: cargo clippy --all-features -- --no-deps # -D warnings
       - name: Test
