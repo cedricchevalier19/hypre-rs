@@ -83,6 +83,7 @@ fn main() {
     // to bindgen, and lets you build up options for
     // the resulting bindings.
     let mut builder = bindgen::builder()
+        .allowlist_item("HYPRE_[\\w_]*")
         // There is no need to make bindings for mpi types as that has already been done in the mpi crate
         .blocklist_item("(O?MPI|o?mpi)[\\w_]*")
         // Tell cargo to invalidate the built crate whenever any of the

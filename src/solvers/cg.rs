@@ -139,23 +139,27 @@ impl PCGSolver {
 
     /// Returns the configuration of the solver
     pub fn current_config(&self) -> HypreResult<PCGSolverConfig> {
-        let mut config: PCGSolverConfig = Default::default();
-
-        config.tol = get_parameter![HYPRE_PCGGetTol, self.internal_solver, HYPRE_Real]?;
-        config.res_tol = get_parameter![HYPRE_PCGGetResidualTol, self.internal_solver, HYPRE_Real]?;
         let max_iters: HYPRE_Int =
             get_parameter![HYPRE_PCGGetMaxIter, self.internal_solver, HYPRE_Int]?;
         if max_iters.is_negative() {
             return Err(HypreError::HypreGenericError);
         }
-        config.max_iters = Some(max_iters as usize);
-        let boolean: HYPRE_Int =
-            get_parameter![HYPRE_PCGGetTwoNorm, self.internal_solver, HYPRE_Int]?;
-        config.two_norm = Some(boolean != 0);
 
-        let boolean: HYPRE_Int =
+        let two_norm: HYPRE_Int =
+            get_parameter![HYPRE_PCGGetTwoNorm, self.internal_solver, HYPRE_Int]?;
+
+        let rel_change: HYPRE_Int =
             get_parameter![HYPRE_PCGGetRelChange, self.internal_solver, HYPRE_Int]?;
-        config.rel_change = Some(boolean != 0);
+
+        let config = PCGSolverConfig {
+            tol: get_parameter![HYPRE_PCGGetTol, self.internal_solver, HYPRE_Real]?,
+            res_tol: get_parameter![HYPRE_PCGGetResidualTol, self.internal_solver, HYPRE_Real]?,
+            max_iters: Some(max_iters as usize),
+            two_norm: Some(two_norm != 0),
+            rel_change: Some(rel_change != 0),
+            ..Default::default()
+        };
+
         Ok(config)
     }
 }
@@ -176,6 +180,7 @@ impl LinearSolver for PCGSolver {
                 x.get_internal()?,
             ));
 
+            #[allow(clippy::useless_conversion)]
             match HYPRE_PCGSolve(
                 self.internal_solver,
                 mat.get_internal()?,
