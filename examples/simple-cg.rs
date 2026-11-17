@@ -15,15 +15,14 @@ fn main() {
     let mesh_size: u32 = 10;
     let global_size = mesh_size * mesh_size;
     // Split rows evenly; the first ranks get one extra row when the size
-    // does not divide evenly. local_begin..local_end is a half-open range.
+    // does not divide evenly.
     let (rank, size) = (mpi_comm.rank() as u64, mpi_comm.size() as u64);
     let local_begin: u32 = (rank * global_size as u64 / size).try_into().unwrap();
     let local_end: u32 = ((rank + 1) * global_size as u64 / size).try_into().unwrap();
-    // hypre ranges are inclusive: (first row, last row)
-    let local_rows = (local_begin, local_end - 1);
+    let local_rows = local_begin..local_end;
 
     // Create a new matrix
-    let mut ij_matrix = IJMatrix::new(&mpi_comm, local_rows, local_rows).unwrap();
+    let mut ij_matrix = IJMatrix::new(&mpi_comm, local_rows.clone(), local_rows.clone()).unwrap();
 
     // Fill the matrix
     let mut nnz_buffer = Vec::<(u32, u32, f64)>::with_capacity(5);
@@ -48,11 +47,11 @@ fn main() {
         nnz_buffer.clear();
     }
 
-    let mut rhs = IJVector::new(&mpi_comm, local_rows).unwrap();
+    let mut rhs = IJVector::new(&mpi_comm, local_rows.clone()).unwrap();
     rhs.add_elements((local_begin..local_end).map(|i| (i, i as f64)))
         .unwrap();
 
-    let mut x = IJVector::new(&mpi_comm, local_rows).unwrap();
+    let mut x = IJVector::new(&mpi_comm, local_rows.clone()).unwrap();
     x.add_elements((local_begin..local_end).map(|i| (i, 0f64)))
         .unwrap();
 

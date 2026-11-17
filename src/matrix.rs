@@ -1,5 +1,6 @@
 use crate::error::HypreError;
 use crate::matrix::Matrix::{ParCSR, IJ};
+use crate::utils::inclusive_bounds;
 use crate::HypreResult;
 use hypre_sys::{
     HYPRE_BigInt, HYPRE_Complex, HYPRE_IJMatrix, HYPRE_IJMatrixAddToValues, HYPRE_IJMatrixAssemble,
@@ -9,6 +10,7 @@ use hypre_sys::{
 };
 use mpi::topology::Communicator;
 use std::num::TryFromIntError;
+use std::ops::Range;
 use std::{ffi::c_void, ptr::null_mut};
 
 use itertools::Itertools;
@@ -102,13 +104,19 @@ impl IJMatrix {
     /// # Arguments
     ///
     /// - comm: MPI communicotor
-    /// - rows: `(first, last)` global indices of the rows owned by the current process
-    /// - cols: `(first, last)` global indices of the cols owned by the current process
+    /// - rows: global indices of the rows owned by the current process
+    /// - cols: global indices of the cols owned by the current process
     ///
     /// # Remarks
     ///
-    /// Both bounds are **inclusive**, as in hypre: `(0, 9)` is 10 rows. The
-    /// ranges of all processes must not overlap and must cover the whole matrix.
+    /// Ranges are half-open, as usual in Rust: `0..10` is 10 rows (hypre's
+    /// inclusive `(0, 9)`). An empty range is allowed for a process that owns
+    /// no rows. The ranges of all processes must not overlap and must cover
+    /// the whole matrix.
+    ///
+    /// # Errors
+    ///
+    /// [HypreError::InvalidRange] if a range's start is greater than its end.
     ///
     /// # Example
     ///
@@ -124,17 +132,19 @@ impl IJMatrix {
     /// let global_size: u32 = 100;
     /// let (rank, size) = (mpi_comm.rank() as u32, mpi_comm.size() as u32);
     /// let begin = rank * global_size / size;
-    /// let end = (rank + 1) * global_size / size; // exclusive
-    /// let ij_matrix = IJMatrix::new(&mpi_comm, (begin, end - 1), (begin, end - 1))?;
+    /// let end = (rank + 1) * global_size / size;
+    /// let ij_matrix = IJMatrix::new(&mpi_comm, begin..end, begin..end)?;
     /// # hypre_rs::finalize()?;
     /// # Ok(())
     /// # }
     /// ```
     pub fn new(
         comm: &impl mpi::topology::Communicator,
-        rows: (u32, u32),
-        cols: (u32, u32),
+        rows: Range<u32>,
+        cols: Range<u32>,
     ) -> HypreResult<Self> {
+        let (row_lower, row_upper) = inclusive_bounds(&rows)?;
+        let (col_lower, col_upper) = inclusive_bounds(&cols)?;
         let mut out = Self {
             internal_matrix: null_mut(),
         };
@@ -142,10 +152,10 @@ impl IJMatrix {
             let h_matrix = &mut out.internal_matrix as *mut _ as *mut HYPRE_IJMatrix;
             check_hypre!(HYPRE_IJMatrixCreate(
                 comm.as_raw(),
-                rows.0.try_into()?,
-                rows.1.try_into()?,
-                cols.0.try_into()?,
-                cols.1.try_into()?,
+                row_lower,
+                row_upper,
+                col_lower,
+                col_upper,
                 h_matrix,
             ));
 
@@ -178,8 +188,8 @@ impl IJMatrix {
     /// # let global_size: u32 = 100;
     /// # let (rank, size) = (mpi_comm.rank() as u32, mpi_comm.size() as u32);
     /// # let local_begin = rank * global_size / size;
-    /// # let local_end = (rank + 1) * global_size / size; // exclusive
-    /// let mut ij_matrix = IJMatrix::new(&mpi_comm, (local_begin, local_end - 1), (local_begin, local_end - 1))?;
+    /// # let local_end = (rank + 1) * global_size / size;
+    /// let mut ij_matrix = IJMatrix::new(&mpi_comm, local_begin..local_end, local_begin..local_end)?;
     /// ij_matrix.add_elements::<u32, f64>((local_begin..local_end).map(|id| (id, id, 1.0f64)));
     /// # hypre_rs::finalize()
     /// # }

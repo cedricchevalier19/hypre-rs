@@ -21,10 +21,9 @@
 //!
 //! hypre_rs::initialize()?;
 //!
-//! // 12 rows: hypre ranges are inclusive
-//! let mut matrix = Matrix::IJ(IJMatrix::new(&mpi_comm, (0, 11), (0, 11))?);
-//! let rhs = Vector::IJ(IJVector::new(&mpi_comm, (0, 11))?);
-//! let mut x = Vector::IJ(IJVector::new(&mpi_comm, (0, 11))?);
+//! let mut matrix = Matrix::IJ(IJMatrix::new(&mpi_comm, 0..12, 0..12)?);
+//! let rhs = Vector::IJ(IJVector::new(&mpi_comm, 0..12)?);
+//! let mut x = Vector::IJ(IJVector::new(&mpi_comm, 0..12)?);
 //!
 //! // CG solver parameters
 //! let my_parameters = PCGSolverConfigBuilder::default()
