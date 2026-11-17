@@ -1,9 +1,11 @@
 use crate::error::HypreError;
+use crate::utils::inclusive_bounds;
 use crate::vector::Vector::IJ;
 use crate::HypreResult;
 use hypre_sys::*;
 use itertools::Itertools;
 use std::ffi::c_void;
+use std::ops::Range;
 use std::ptr::null_mut;
 
 #[derive(Debug)]
@@ -13,18 +15,21 @@ pub struct IJVector {
 
 impl IJVector {
     /// Creates an IJVector from a communicator [comm] and sizes
-    pub fn new(comm: &impl mpi::topology::Communicator, rows: (u32, u32)) -> HypreResult<Self> {
+    ///
+    /// `rows` is the half-open range of global indices owned by the current MPI
+    /// rank (`0..10` is 10 rows); it may be empty.
+    ///
+    /// # Errors
+    ///
+    /// [HypreError::InvalidRange] if `rows.start > rows.end`.
+    pub fn new(comm: &impl mpi::topology::Communicator, rows: Range<u32>) -> HypreResult<Self> {
+        let (lower, upper) = inclusive_bounds(&rows)?;
         let mut out = Self {
             internal: null_mut(),
         };
         unsafe {
             let h_matrix = &mut out.internal as *mut _ as *mut HYPRE_IJVector;
-            check_hypre!(HYPRE_IJVectorCreate(
-                comm.as_raw(),
-                rows.0.try_into()?,
-                rows.1.try_into()?,
-                h_matrix,
-            ));
+            check_hypre!(HYPRE_IJVectorCreate(comm.as_raw(), lower, upper, h_matrix,));
 
             // unwrap because HYPRE_PARCSR is i32 in C
             check_hypre!(HYPRE_IJVectorSetObjectType(

@@ -23,6 +23,8 @@ pub enum HypreError {
     UnknowError,
     #[error("Invalid parameter, should be positive")]
     InvalidParameterPositive,
+    #[error("Invalid range: start is greater than end")]
+    InvalidRange,
     #[error(transparent)]
     ConversionError(#[from] TryFromIntError),
     #[error(transparent)]
