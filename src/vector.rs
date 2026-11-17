@@ -13,6 +13,9 @@ pub struct IJVector {
 
 impl IJVector {
     /// Creates an IJVector from a communicator [comm] and sizes
+    ///
+    /// `rows` is the `(first, last)` global indices owned by the current
+    /// process; both bounds are **inclusive**, as in hypre.
     pub fn new(comm: &impl mpi::topology::Communicator, rows: (u32, u32)) -> HypreResult<Self> {
         let mut out = Self {
             internal: null_mut(),

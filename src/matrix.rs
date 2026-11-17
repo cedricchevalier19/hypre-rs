@@ -102,10 +102,13 @@ impl IJMatrix {
     /// # Arguments
     ///
     /// - comm: MPI communicotor
-    /// - rows: couple of global indices of rows owned by current processor
-    /// - cols: couple of global indices of cols owned by current processor
+    /// - rows: `(first, last)` global indices of the rows owned by the current process
+    /// - cols: `(first, last)` global indices of the cols owned by the current process
     ///
     /// # Remarks
+    ///
+    /// Both bounds are **inclusive**, as in hypre: `(0, 9)` is 10 rows. The
+    /// ranges of all processes must not overlap and must cover the whole matrix.
     ///
     /// # Example
     ///
@@ -119,11 +122,10 @@ impl IJMatrix {
     /// # hypre_rs::initialize()?;
     /// # let mpi_comm = universe.world();
     /// let global_size: u32 = 100;
-    /// // Cannot panic as global_size is properly represented on usize
-    /// let step: u32 = (global_size as i64 / mpi_comm.size() as i64).try_into().unwrap();
-    /// let begin: u32 = (mpi_comm.rank()  * step as i32).try_into().unwrap();
-    /// let end = (begin + step).clamp(0u32, global_size);
-    /// let ij_matrix = IJMatrix::new(&mpi_comm, (begin, end), (begin, end))?;
+    /// let (rank, size) = (mpi_comm.rank() as u32, mpi_comm.size() as u32);
+    /// let begin = rank * global_size / size;
+    /// let end = (rank + 1) * global_size / size; // exclusive
+    /// let ij_matrix = IJMatrix::new(&mpi_comm, (begin, end - 1), (begin, end - 1))?;
     /// # hypre_rs::finalize()?;
     /// # Ok(())
     /// # }
@@ -174,11 +176,10 @@ impl IJMatrix {
     /// # hypre_rs::initialize()?;
     /// # let mpi_comm = universe.world();
     /// # let global_size: u32 = 100;
-    /// // Cannot panic as global_size is properly represented on usize
-    /// # let step: u32 = (global_size as i64 / mpi_comm.size() as i64).try_into().unwrap();
-    /// # let local_begin: u32 = (mpi_comm.rank() * step as i32).try_into().unwrap();
-    /// # let local_end = (local_begin + step).clamp(0u32, global_size);
-    /// let mut ij_matrix = IJMatrix::new(&mpi_comm, (local_begin, local_end), (local_begin, local_end))?;
+    /// # let (rank, size) = (mpi_comm.rank() as u32, mpi_comm.size() as u32);
+    /// # let local_begin = rank * global_size / size;
+    /// # let local_end = (rank + 1) * global_size / size; // exclusive
+    /// let mut ij_matrix = IJMatrix::new(&mpi_comm, (local_begin, local_end - 1), (local_begin, local_end - 1))?;
     /// ij_matrix.add_elements::<u32, f64>((local_begin..local_end).map(|id| (id, id, 1.0f64)));
     /// # hypre_rs::finalize()
     /// # }
