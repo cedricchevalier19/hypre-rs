@@ -79,6 +79,18 @@ fn main() {
     // Tell cargo to invalidate the built crate whenever the wrapper changes
     println!("cargo:rerun-if-changed=wrapper.h");
 
+    // hypre >= 2.29 provides HYPRE_Initialize() (HYPRE_Init becomes a macro);
+    // older releases only have HYPRE_Init(). Let lib.rs provide a fallback.
+    println!("cargo:rustc-check-cfg=cfg(hypre_has_initialize)");
+    let utilities_h = include_dir.join("HYPRE_utilities.h");
+    println!("cargo:rerun-if-changed={}", utilities_h.display());
+    let has_initialize = std::fs::read_to_string(&utilities_h)
+        .map(|s| s.contains("HYPRE_Initialize("))
+        .unwrap_or(false);
+    if has_initialize {
+        println!("cargo:rustc-cfg=hypre_has_initialize");
+    }
+
     // The bindgen::Builder is the main entry point
     // to bindgen, and lets you build up options for
     // the resulting bindings.
