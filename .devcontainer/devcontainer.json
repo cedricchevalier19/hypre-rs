@@ -2,6 +2,7 @@
   "name": "hypre-rs",
   "build": {
     "dockerfile": "Dockerfile",
+    "target": "dev",
     "args": {
       "RUST_VERSION": "1"
     }

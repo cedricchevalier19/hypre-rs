@@ -1,13 +1,15 @@
-# Development image for hypre-rs.
+# Development and CI images for hypre-rs.
 #
 # Provides: stable Rust (+ clippy, rustfmt), hypre, OpenMPI, and libclang for bindgen.
 # Works on both amd64 and arm64 (e.g. Apple Silicon) hosts.
+#
+# Stages:
+#   ci   - minimal image used as the GitHub Actions job container (runs as root).
+#   dev  - the devcontainer: adds debuggers, editors and a non-root user.
+#          It is the last stage, so a plain `docker build .devcontainer` gives it.
 ARG RUST_VERSION=1
-FROM rust:${RUST_VERSION}-bookworm
 
-ARG USERNAME=dev
-ARG USER_UID=1000
-ARG USER_GID=${USER_UID}
+FROM rust:${RUST_VERSION}-bookworm AS base
 
 RUN apt-get update \
  && DEBIAN_FRONTEND=noninteractive apt-get install -y --no-install-recommends \
@@ -15,8 +17,6 @@ RUN apt-get update \
       openmpi-bin libopenmpi-dev \
       clang libclang-dev \
       pkg-config \
-      gdb lldb \
-      sudo less vim-tiny \
  && rm -rf /var/lib/apt/lists/*
 
 # Debian installs hypre and OpenMPI under an architecture-specific directory
@@ -44,7 +44,30 @@ ENV HYPRE_LIB_DIR=/opt/hypre/lib \
     OMPI_MCA_rmaps_base_oversubscribe=1 \
     OMPI_MCA_btl_vader_single_copy_mechanism=none
 
-RUN rustup component add clippy rustfmt rust-src
+RUN rustup component add clippy rustfmt
+
+# ---------------------------------------------------------------------------
+FROM base AS ci
+
+# GitHub Actions job containers must run as root (actions/checkout writes to a
+# workspace owned by the runner), and OpenMPI refuses root unless told otherwise.
+ENV OMPI_ALLOW_RUN_AS_ROOT=1 \
+    OMPI_ALLOW_RUN_AS_ROOT_CONFIRM=1
+
+# ---------------------------------------------------------------------------
+FROM base AS dev
+
+ARG USERNAME=dev
+ARG USER_UID=1000
+ARG USER_GID=${USER_UID}
+
+RUN apt-get update \
+ && DEBIAN_FRONTEND=noninteractive apt-get install -y --no-install-recommends \
+      gdb lldb \
+      sudo less vim-tiny \
+ && rm -rf /var/lib/apt/lists/*
+
+RUN rustup component add rust-src
 
 # Non-root user (OpenMPI refuses to run as root by default).
 RUN groupadd --gid "${USER_GID}" "${USERNAME}" \

@@ -5,24 +5,85 @@ on:
     branches: [ master ]
   pull_request:
     branches: [ master ]
+  # Weekly rebuild of the CI image to pick up new stable Rust and Debian fixes.
+  schedule:
+    - cron: "0 4 * * 1"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+env:
+  CARGO_TERM_COLOR: always
 
 jobs:
-  build:
-
+  # Builds the `ci` stage of .devcontainer/Dockerfile and pushes it to GHCR,
+  # tagged by the Dockerfile's hash. When that tag already exists the build is
+  # skipped, so most runs only pull a ready image instead of running apt-get.
+  image:
     runs-on: ubuntu-latest
-    env:
-      HYPRE_LIB_DIR: "/usr/lib/x86_64-linux-gnu/"
-      HYPRE_INCLUDE_DIR: "/usr/include/hypre/"
+    permissions:
+      contents: read
+      packages: write
+    outputs:
+      image: ${{ steps.ref.outputs.image }}
+    steps:
+      - uses: actions/checkout@v4
+      - name: Compute image reference
+        id: ref
+        run: |
+          repo="$(echo "ghcr.io/${GITHUB_REPOSITORY}-ci" | tr '[:upper:]' '[:lower:]')"
+          tag="${{ hashFiles('.devcontainer/Dockerfile') }}"
+          echo "repo=${repo}" >> "$GITHUB_OUTPUT"
+          echo "image=${repo}:${tag:0:16}" >> "$GITHUB_OUTPUT"
+      - uses: docker/login-action@v3
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+      - name: Check whether the image already exists
+        id: exists
+        run: |
+          if [ "${{ github.event_name }}" != schedule ] \
+             && [ "${{ github.event_name }}" != workflow_dispatch ] \
+             && docker buildx imagetools inspect "${{ steps.ref.outputs.image }}" > /dev/null 2>&1; then
+            echo "found=true" >> "$GITHUB_OUTPUT"
+          else
+            echo "found=false" >> "$GITHUB_OUTPUT"
+          fi
+      - uses: docker/setup-buildx-action@v3
+        if: steps.exists.outputs.found != 'true'
+      - uses: docker/build-push-action@v6
+        if: steps.exists.outputs.found != 'true'
+        with:
+          context: .devcontainer
+          target: ci
+          pull: true
+          push: true
+          tags: ${{ steps.ref.outputs.image }}
+          cache-from: type=gha,scope=ci-image
+          cache-to: type=gha,scope=ci-image,mode=max
+
+  build:
+    needs: image
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      packages: read
+      checks: write # rs-clippy-check annotations
+    container:
+      image: ${{ needs.image.outputs.image }}
+      credentials:
+        username: ${{ github.actor }}
+        password: ${{ secrets.GITHUB_TOKEN }}
+      # OpenMPI's shared-memory transport needs more than Docker's 64 MB default.
+      options: --shm-size=1g
+    # HYPRE_LIB_DIR, HYPRE_INCLUDE_DIR, the toolchain, clippy and MPI all come
+    # from the image.
 
     steps:
-      - name: Setup hypre
-        run: |
-          sudo apt-get update -q
-          sudo apt-get install -y -q libhypre-dev libopenmpi-dev openmpi-bin
       - uses: actions/checkout@v4
-      - uses: dtolnay/rust-toolchain@stable
-        with:
-          components: clippy
+      - uses: Swatinem/rust-cache@v2
       - name: Check
         run: cargo check --all-features
       - uses: clechasseur/rs-clippy-check@v3
