@@ -40,6 +40,25 @@ HYPRE_DIR = "/opt/hypre"
 ```
 
 
+### Development container
+A ready-to-use development environment (Rust, hypre, OpenMPI, libclang) is provided in `.devcontainer/`.
+It works on both x86_64 and arm64 hosts, including Apple Silicon.
+
+- **VS Code / JetBrains IDEs**: open the project and choose *Reopen in Container*.
+- **Plain Docker** (`CARGO_TARGET_DIR` keeps the Linux build output out of your host's `target/`):
+  ```bash
+  docker build -t hypre-rs-dev .devcontainer
+  docker run --rm -it -e CARGO_TARGET_DIR=/home/dev/target -v "$PWD":/workspaces/hypre-rs hypre-rs-dev
+  # then, inside the container:
+  cargo test
+  cargo run --example simple-cg
+  mpirun -n 4 /home/dev/target/debug/examples/simple-cg
+  ```
+- **Apple `container`** (macOS 26+): same commands, with `container` in place of `docker`
+  (run `container system start` once first).
+
+The image sets `HYPRE_LIB_DIR` and `HYPRE_INCLUDE_DIR`, which take precedence over any `HYPRE_DIR` in `.cargo/config.toml`.
+
 ## License
 This project is licensed under dual MIT/Apache-2.0 license. See the [LICENSE-MIT](LICENSE-MIT) and [LICENSE-APACHE](LICENSE-APACHE) files for details.
 
