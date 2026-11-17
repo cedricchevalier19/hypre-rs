@@ -10,12 +10,9 @@ macro_rules! check_hypre {
 }
 
 pub fn initialize() -> HypreResult<()> {
-    #[cfg(target_os = "macos")]
-    {
-        use hypre_sys::HYPRE_Initialize;
-        unsafe {
-            check_hypre!(HYPRE_Initialize());
-        }
+    use hypre_sys::HYPRE_Initialize;
+    unsafe {
+        check_hypre!(HYPRE_Initialize());
     }
     Ok(())
 }

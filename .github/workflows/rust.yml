@@ -16,7 +16,9 @@ jobs:
 
     steps:
       - name: Setup hypre
-        run: sudo apt install -y -q libhypre libhypre-dev
+        run: |
+          sudo apt-get update -q
+          sudo apt-get install -y -q libhypre-dev libopenmpi-dev openmpi-bin
       - uses: actions/checkout@v4
       - uses: dtolnay/rust-toolchain@stable
         with:
