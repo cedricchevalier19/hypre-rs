@@ -72,8 +72,10 @@ fn main() {
     let mut c_x = Vector::IJ(x);
     match solver.solve(&mut c_matrix, &c_rhs, &mut c_x) {
         Ok(info) => println!("Solver has converged: {}", info),
-        Err(e) => println!("error {:?}", e),
+        Err(e) => panic!("Solver failed: {:?}", e),
     }
 
+    // hypre objects must be dropped before hypre is finalized
+    drop((solver, c_matrix, c_rhs, c_x));
     hypre_rs::finalize().unwrap()
 }

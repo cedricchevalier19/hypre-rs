@@ -134,6 +134,7 @@ impl IJMatrix {
     /// let begin = rank * global_size / size;
     /// let end = (rank + 1) * global_size / size;
     /// let ij_matrix = IJMatrix::new(&mpi_comm, begin..end, begin..end)?;
+    /// # drop(ij_matrix);
     /// # hypre_rs::finalize()?;
     /// # Ok(())
     /// # }
@@ -191,6 +192,7 @@ impl IJMatrix {
     /// # let local_end = (rank + 1) * global_size / size;
     /// let mut ij_matrix = IJMatrix::new(&mpi_comm, local_begin..local_end, local_begin..local_end)?;
     /// ij_matrix.add_elements::<u32, f64>((local_begin..local_end).map(|id| (id, id, 1.0f64)));
+    /// # drop(ij_matrix);
     /// # hypre_rs::finalize()
     /// # }
     /// ```

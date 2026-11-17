@@ -79,10 +79,13 @@ impl PCGSolverConfigBuilder {
 /// ```
 /// use hypre_rs::solvers::PCGSolver;
 ///
-/// # let mpi_comm = mpi::initialize().unwrap().world();
+/// # let universe = mpi::initialize().unwrap();
+/// # let mpi_comm = universe.world();
+/// # hypre_rs::initialize().unwrap();
 /// // Create PCGSolver with hypre's default configuration.
 /// let solver = PCGSolver::new(&mpi_comm, Default::default()).unwrap();
-///
+/// # drop(solver);
+/// # hypre_rs::finalize().unwrap();
 /// ```
 impl PCGSolver {
     /// Creates a new PCGSolver according to the given configuration
@@ -224,27 +227,32 @@ mod tests {
     use super::*;
     #[test]
     fn config_test() {
-        let mpi_comm = mpi::initialize().unwrap().world();
+        // Keep the universe alive: dropping it calls MPI_Finalize.
+        let universe = mpi::initialize().unwrap();
+        let mpi_comm = universe.world();
         crate::initialize().unwrap();
 
-        let solver = PCGSolver::new(&mpi_comm, Default::default()).unwrap();
+        // Solvers must be destroyed before hypre is finalized.
+        {
+            let solver = PCGSolver::new(&mpi_comm, Default::default()).unwrap();
 
-        let parameters = solver.current_config();
-        println!("{:?}", parameters);
+            let parameters = solver.current_config();
+            println!("{:?}", parameters);
 
-        let my_parameters = PCGSolverConfigBuilder::default()
-            .tol(1e-9)
-            .max_iters(500usize)
-            .two_norm(true)
-            .recompute_residual_period(8usize)
-            .build()
-            .unwrap();
-        let solver = PCGSolver::new(&mpi_comm, my_parameters.clone()).unwrap();
-        let parameters = solver.current_config().unwrap();
-        println!("{:?}", parameters);
-        assert_eq!(my_parameters.tol, parameters.tol);
-        assert_eq!(my_parameters.max_iters, parameters.max_iters);
-        assert_eq!(my_parameters.two_norm, parameters.two_norm);
+            let my_parameters = PCGSolverConfigBuilder::default()
+                .tol(1e-9)
+                .max_iters(500usize)
+                .two_norm(true)
+                .recompute_residual_period(8usize)
+                .build()
+                .unwrap();
+            let solver = PCGSolver::new(&mpi_comm, my_parameters.clone()).unwrap();
+            let parameters = solver.current_config().unwrap();
+            println!("{:?}", parameters);
+            assert_eq!(my_parameters.tol, parameters.tol);
+            assert_eq!(my_parameters.max_iters, parameters.max_iters);
+            assert_eq!(my_parameters.two_norm, parameters.two_norm);
+        }
         crate::finalize().unwrap();
     }
 }

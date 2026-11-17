@@ -30,3 +30,14 @@ jobs:
           args: --all-features --no-deps
       - name: Test
         run: cargo test --all-features
+      # Cargo's target runner wraps test binaries, doctests and examples.
+      # 3 ranks checks a row count that does not divide evenly.
+      - name: Test on several MPI ranks
+        run: |
+          for n in 2 3; do
+            echo "::group::mpirun -n $n"
+            export CARGO_TARGET_X86_64_UNKNOWN_LINUX_GNU_RUNNER="mpirun -n $n"
+            cargo test --all-features
+            cargo run --example simple-cg
+            echo "::endgroup::"
+          done

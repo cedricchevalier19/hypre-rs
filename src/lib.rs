@@ -21,9 +21,13 @@
 //!
 //! hypre_rs::initialize()?;
 //!
-//! let mut matrix = Matrix::IJ(IJMatrix::new(&mpi_comm, 0..12, 0..12)?);
-//! let rhs = Vector::IJ(IJVector::new(&mpi_comm, 0..12)?);
-//! let mut x = Vector::IJ(IJVector::new(&mpi_comm, 0..12)?);
+//! // Split the 12 rows between the MPI ranks
+//! let (rank, size) = (mpi_comm.rank() as u32, mpi_comm.size() as u32);
+//! let rows = (rank * 12 / size)..((rank + 1) * 12 / size);
+//!
+//! let mut matrix = Matrix::IJ(IJMatrix::new(&mpi_comm, rows.clone(), rows.clone())?);
+//! let rhs = Vector::IJ(IJVector::new(&mpi_comm, rows.clone())?);
+//! let mut x = Vector::IJ(IJVector::new(&mpi_comm, rows)?);
 //!
 //! // CG solver parameters
 //! let my_parameters = PCGSolverConfigBuilder::default()
@@ -41,6 +45,8 @@
 //!     Err(e) => return Err(e),
 //! }
 //!
+//! // hypre objects must be dropped before hypre is finalized
+//! drop((solver, matrix, rhs, x));
 //! hypre_rs::finalize()?;
 //! # Ok(())
 //! # }
