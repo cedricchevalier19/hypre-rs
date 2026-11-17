@@ -27,16 +27,21 @@ impl IJVector {
         let mut out = Self {
             internal: null_mut(),
         };
+        // If a call below fails, dropping `out` destroys whatever was created.
         unsafe {
-            let h_matrix = &mut out.internal as *mut _ as *mut HYPRE_IJVector;
-            check_hypre!(HYPRE_IJVectorCreate(comm.as_raw(), lower, upper, h_matrix,));
+            check_hypre!(HYPRE_IJVectorCreate(
+                comm.as_raw(),
+                lower,
+                upper,
+                &mut out.internal
+            ));
 
             // unwrap because HYPRE_PARCSR is i32 in C
             check_hypre!(HYPRE_IJVectorSetObjectType(
-                *h_matrix,
+                out.internal,
                 HYPRE_PARCSR.try_into().unwrap()
             ));
-            check_hypre!(HYPRE_IJVectorInitialize(*h_matrix));
+            check_hypre!(HYPRE_IJVectorInitialize(out.internal));
         }
         Ok(out)
     }
@@ -93,13 +98,7 @@ impl IJVector {
     }
 }
 
-impl Drop for IJVector {
-    fn drop(&mut self) {
-        unsafe {
-            HYPRE_IJVectorDestroy(self.internal);
-        }
-    }
-}
+impl_hypre_drop!(IJVector, internal, HYPRE_IJVectorDestroy);
 
 /// Vector datatype
 ///

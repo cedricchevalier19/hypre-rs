@@ -97,12 +97,12 @@ impl PCGSolver {
             internal_solver: null_mut(),
         };
         unsafe {
-            let h_solver = &mut solver.internal_solver as *mut _ as *mut HYPRE_Solver;
-            match HYPRE_ParCSRPCGCreate(comm.as_raw(), h_solver) {
-                0 => {}
-                x => return Err(HypreError::new(x)),
-            }
+            check_hypre!(HYPRE_ParCSRPCGCreate(
+                comm.as_raw(),
+                &mut solver.internal_solver
+            ));
         }
+        // On error, `solver` is dropped and its handle destroyed.
         solver.config(config)
     }
 
@@ -213,14 +213,7 @@ impl LinearSolver for PCGSolver {
     }
 }
 
-impl Drop for PCGSolver {
-    /// Calls hypre's destroy function.
-    fn drop(&mut self) {
-        unsafe {
-            HYPRE_ParCSRPCGDestroy(self.internal_solver);
-        }
-    }
-}
+impl_hypre_drop!(PCGSolver, internal_solver, HYPRE_ParCSRPCGDestroy);
 
 #[cfg(test)]
 mod tests {

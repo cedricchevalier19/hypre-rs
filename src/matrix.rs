@@ -15,7 +15,10 @@ use std::{ffi::c_void, ptr::null_mut};
 
 use itertools::Itertools;
 
-#[derive(Debug, Clone)]
+/// Parallel CSR matrix, owning its hypre handle.
+///
+/// Not `Clone`: copying the handle would destroy it twice.
+#[derive(Debug)]
 pub struct CSRMatrix {
     internal_matrix: HYPRE_ParCSRMatrix,
 }
@@ -43,7 +46,7 @@ impl CSRMatrix {
         let mut h_row_starts = Self::translate_into_hypre_bigints(row_starts)?;
         let mut h_col_starts = Self::translate_into_hypre_bigints(col_starts)?;
         unsafe {
-            match HYPRE_ParCSRMatrixCreate(
+            check_hypre!(HYPRE_ParCSRMatrixCreate(
                 comm.as_raw(),
                 global_num_rows.try_into()?,
                 global_num_cols.try_into()?,
@@ -53,11 +56,9 @@ impl CSRMatrix {
                 0,
                 0,
                 &mut out.internal_matrix,
-            ) {
-                0 => Ok(out),
-                x => Err(HypreError::new(x)),
-            }
+            ));
         }
+        Ok(out)
     }
 
     fn get_internal(&self) -> HypreResult<HYPRE_Matrix> {
@@ -65,13 +66,7 @@ impl CSRMatrix {
     }
 }
 
-impl Drop for CSRMatrix {
-    fn drop(&mut self) {
-        unsafe {
-            HYPRE_ParCSRMatrixDestroy(self.internal_matrix);
-        }
-    }
-}
+impl_hypre_drop!(CSRMatrix, internal_matrix, HYPRE_ParCSRMatrixDestroy);
 
 #[derive(Debug)]
 pub struct IJMatrix {
@@ -86,15 +81,18 @@ impl TryFrom<IJMatrix> for CSRMatrix {
     type Error = HypreError;
 
     fn try_from(ij: IJMatrix) -> Result<Self, Self::Error> {
-        let mut out = CSRMatrix {
-            internal_matrix: null_mut(),
-        };
+        let mut parcsr: *mut c_void = null_mut();
         unsafe {
             check_hypre!(HYPRE_IJMatrixAssemble(ij.internal_matrix));
-            let csr_mat_ptr = &mut out.internal_matrix as *mut _ as *mut *mut c_void;
-            check_hypre!(HYPRE_IJMatrixGetObject(ij.internal_matrix, csr_mat_ptr));
+            check_hypre!(HYPRE_IJMatrixGetObject(ij.internal_matrix, &mut parcsr));
+            // `ij` is dropped on return, and HYPRE_IJMatrixDestroy would also
+            // destroy the ParCSR object. With object type -1 it only frees the
+            // IJ interface, so the returned CSRMatrix becomes the sole owner.
+            check_hypre!(HYPRE_IJMatrixSetObjectType(ij.internal_matrix, -1));
         }
-        Ok(out)
+        Ok(CSRMatrix {
+            internal_matrix: parcsr as HYPRE_ParCSRMatrix,
+        })
     }
 }
 
@@ -149,23 +147,23 @@ impl IJMatrix {
         let mut out = Self {
             internal_matrix: null_mut(),
         };
+        // If a call below fails, dropping `out` destroys whatever was created.
         unsafe {
-            let h_matrix = &mut out.internal_matrix as *mut _ as *mut HYPRE_IJMatrix;
             check_hypre!(HYPRE_IJMatrixCreate(
                 comm.as_raw(),
                 row_lower,
                 row_upper,
                 col_lower,
                 col_upper,
-                h_matrix,
+                &mut out.internal_matrix,
             ));
 
             // unwrap is ok as HYPRE_PARCSR is i32 in C
             check_hypre!(HYPRE_IJMatrixSetObjectType(
-                *h_matrix,
+                out.internal_matrix,
                 HYPRE_PARCSR.try_into().unwrap()
             ));
-            check_hypre!(HYPRE_IJMatrixInitialize(*h_matrix));
+            check_hypre!(HYPRE_IJMatrixInitialize(out.internal_matrix));
         }
         Ok(out)
     }
@@ -239,13 +237,7 @@ impl IJMatrix {
     }
 }
 
-impl Drop for IJMatrix {
-    fn drop(&mut self) {
-        unsafe {
-            HYPRE_IJMatrixDestroy(self.internal_matrix);
-        }
-    }
-}
+impl_hypre_drop!(IJMatrix, internal_matrix, HYPRE_IJMatrixDestroy);
 
 /// Matrix datatype
 ///
@@ -264,5 +256,23 @@ impl Matrix {
             IJ(m) => m.get_internal(),
             ParCSR(m) => m.get_internal(),
         }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    /// Dropping a wrapper whose `Create` never succeeded must leave hypre's
+    /// global error state clean (`HYPRE_IJMatrixDestroy(NULL)` sets the flag).
+    #[test]
+    fn drop_null_handle() {
+        drop(IJMatrix {
+            internal_matrix: null_mut(),
+        });
+        drop(CSRMatrix {
+            internal_matrix: null_mut(),
+        });
+        assert_eq!(unsafe { hypre_sys::HYPRE_GetError() }, 0);
     }
 }
