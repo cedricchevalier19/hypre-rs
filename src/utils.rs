@@ -29,8 +29,8 @@ pub fn finalize() -> HypreResult<()> {
 
 /// Converts a half-open Rust range into hypre's inclusive `(lower, upper)` bounds.
 ///
-/// An empty range `n..n` becomes `(n, n - 1)`, which hypre accepts for a
-/// process that owns no rows.
+/// An empty range `n..n` becomes `(n, n - 1)`, which hypre accepts for an
+/// MPI rank that owns no rows.
 pub(crate) fn inclusive_bounds(range: &Range<u32>) -> HypreResult<(HYPRE_BigInt, HYPRE_BigInt)> {
     if range.start > range.end {
         return Err(HypreError::InvalidRange);

@@ -104,14 +104,14 @@ impl IJMatrix {
     /// # Arguments
     ///
     /// - comm: MPI communicotor
-    /// - rows: global indices of the rows owned by the current process
-    /// - cols: global indices of the cols owned by the current process
+    /// - rows: global indices of the rows owned by the current MPI rank
+    /// - cols: global indices of the cols owned by the current MPI rank
     ///
     /// # Remarks
     ///
     /// Ranges are half-open, as usual in Rust: `0..10` is 10 rows (hypre's
-    /// inclusive `(0, 9)`). An empty range is allowed for a process that owns
-    /// no rows. The ranges of all processes must not overlap and must cover
+    /// inclusive `(0, 9)`). An empty range is allowed for an MPI rank that owns
+    /// no rows. The ranges of all MPI ranks must not overlap and must cover
     /// the whole matrix.
     ///
     /// # Errors

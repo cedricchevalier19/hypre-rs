@@ -16,8 +16,8 @@ pub struct IJVector {
 impl IJVector {
     /// Creates an IJVector from a communicator [comm] and sizes
     ///
-    /// `rows` is the half-open range of global indices owned by the current
-    /// process (`0..10` is 10 rows); it may be empty.
+    /// `rows` is the half-open range of global indices owned by the current MPI
+    /// rank (`0..10` is 10 rows); it may be empty.
     ///
     /// # Errors
     ///
