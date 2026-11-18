@@ -37,6 +37,8 @@ macro_rules! check_positive_parameter {
     }};
 }
 
+#[macro_use]
+mod krylov_macro;
 mod cg;
 mod krylov;
 
@@ -166,7 +168,7 @@ pub trait SymmetricLinearSolver {
     /// Assembles `mat`, `rhs` and `x`, so it is collective.
     fn solve(
         &self,
-        mat: &mut SymmetricMatrix<'_>,
+        mat: &SymmetricMatrix<'_>,
         rhs: &Vector<'_>,
         x: &mut Vector<'_>,
     ) -> HypreResult<IterativeSolverStatus>;

@@ -48,7 +48,7 @@ fn symmetry_check() -> Result<(), Box<dyn std::error::Error>> {
         let rows = (rank * N / size)..((rank + 1) * N / size);
 
         // Symmetric: converts, and CG solves it. A * [1, ..., 1] = [1, 0, ..., 0, 1].
-        let mut a = SymmetricMatrix::try_from(laplacian(&ctx, &comm, rows.clone(), &[])?)?;
+        let a = SymmetricMatrix::try_from(laplacian(&ctx, &comm, rows.clone(), &[])?)?;
         let mut b = ctx.ij_vector(&comm, rows.clone())?;
         b.add_elements(
             rows.clone()
@@ -63,7 +63,7 @@ fn symmetry_check() -> Result<(), Box<dyn std::error::Error>> {
             .two_norm(true)
             .build()?;
         let solver = SymmetricSolver::CG(ctx.pcg_solver(&comm, config)?);
-        let status = solver.solve(&mut a, &Vector::IJ(b), &mut x)?;
+        let status = solver.solve(&a, &Vector::IJ(b), &mut x)?;
         assert!(status.converged, "{status}");
         let Vector::IJ(x) = &x;
         for (i, v) in rows.clone().zip(x.get_values(rows.clone())?) {

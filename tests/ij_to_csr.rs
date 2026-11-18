@@ -41,7 +41,7 @@ fn ij_to_csr_conversion_outlives_ij() -> Result<(), Box<dyn std::error::Error>> 
         let mut x = Vector::IJ(x);
 
         let solver = PCGSolver::new(&ctx, &comm, Default::default())?;
-        let status = solver.solve(&mut matrix, &Vector::IJ(rhs), &mut x)?;
+        let status = solver.solve(&matrix, &Vector::IJ(rhs), &mut x)?;
         assert!(status.converged);
         // A = 2 * I and b = [2, ..., 2], so the exact solution is x = [1, ..., 1].
         let Vector::IJ(x) = &x;

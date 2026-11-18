@@ -58,7 +58,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
 
     let c_rhs = Vector::IJ(rhs);
     let mut c_x = Vector::IJ(x);
-    let info = solver.solve(&mut matrix, &c_rhs, &mut c_x)?;
+    let info = solver.solve(&matrix, &c_rhs, &mut c_x)?;
     println!("Solver has converged: {}", info);
 
     // hypre objects must be dropped before hypre is finalized (checked by the compiler)

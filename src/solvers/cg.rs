@@ -1,250 +1,94 @@
-use derive_builder::Builder;
+//! The Conjugate Gradient solver, for symmetric positive definite matrices.
 
+use derive_builder::Builder;
+use std::marker::PhantomData;
 use std::ptr::null_mut;
 
 use crate::error::HypreError;
-use crate::solvers::{IterativeSolverStatus, SymmetricLinearSolver};
-
 use crate::matrix::SymmetricMatrix;
+use crate::solvers::{IterativeSolverStatus, SymmetricLinearSolver};
 use crate::{HypreContext, HypreResult, Vector};
 use hypre_sys::*;
-use mpi;
-use std::marker::PhantomData;
 
-/// Access to hypre Conjugate Gradient solver
-///
-/// CG requires a symmetric positive definite matrix, so it solves systems
-/// with a [SymmetricMatrix] only (see [SymmetricLinearSolver]).
-#[derive(Debug)]
-pub struct PCGSolver<'h> {
-    internal_solver: HYPRE_Solver,
-    _hypre: PhantomData<&'h ()>,
-}
-
-/// Conjugate Gradient Solver Configuration
-///
-/// ## Convergence criteria
-///
-/// According to hypre source code, default is
-/// $$<C*r, r>  < \text{max}({\text{tol}_a^2, tol^2 * <C*b, b>)$$
-///
-/// If res_tol is set, $$||r_\text{new} - r_\text{old}||_C < \text{tol}_r * ||b||_C$$ is used.
-///
-/// If two_norm is set, $$||.||_2$$ norm is used.
-#[derive(Default, Debug, Clone, Builder, Copy)]
-#[builder(setter(into, strip_option), default)]
-#[builder(build_fn(validate = "Self::validate", error = "HypreError"))]
-pub struct PCGSolverConfig {
-    /// Relative convergence tolerance
-    pub tol: Option<f64>,
-    /// Absolute convergence tolerance
-    pub abs_tol: Option<f64>,
-    /// Residual convergence tolerance
-    pub res_tol: Option<f64>,
-    /// Convergence factor tolerance, if >0 used for special test for slow convergence
-    pub conv_tol_fact: Option<f64>,
-    /// Maximum number of iterations
-    pub max_iters: Option<usize>,
-    /// Force using $||.||_2$ instead of $||.||_C$
-    pub two_norm: Option<bool>,
-    /// Convergence only if $x$ didn't change too much in the last iteration
-    pub rel_change: Option<bool>,
-    pub logging: Option<u32>,
-    pub print_level: Option<u32>,
-    /// Force computing an explicit residual if implicit residual convergence
-    pub recompute_residual: Option<bool>,
-    /// Periodically recompute an explicit residual
-    pub recompute_residual_period: Option<usize>,
-}
-
-impl PCGSolverConfigBuilder {
-    /// Validates valid parameters for [PCGSolverConfig]
-    fn validate(&self) -> HypreResult<()> {
-        check_positive_parameter![self, tol];
-        check_positive_parameter![self, abs_tol];
-        check_positive_parameter![self, res_tol];
-        check_positive_parameter![self, conv_tol_fact];
-        Ok(())
-    }
-}
-
-/// Preconditioned Conjugate Gradient solver
-///
-/// # Example
-/// ```
-/// use hypre_rs::solvers::PCGSolver;
-///
-/// # fn main() -> Result<(), Box<dyn std::error::Error>> {
-/// # let universe = mpi::initialize().ok_or("MPI was already initialized (or finalized) in this process")?;
-/// # let mpi_comm = universe.world();
-/// # let ctx = hypre_rs::initialize(&universe)?;
-/// // Create PCGSolver with hypre's default configuration.
-/// let solver = PCGSolver::new(&ctx, &mpi_comm, Default::default())?;
-/// # drop(solver);
-/// # ctx.finalize()?;
-/// # Ok(())
-/// # }
-/// ```
-impl<'h> PCGSolver<'h> {
-    /// Creates a new PCGSolver according to the given configuration
-    pub fn new(
-        _hypre: &'h HypreContext<'_>,
-        comm: &'h impl mpi::topology::Communicator,
-        config: PCGSolverConfig,
-    ) -> HypreResult<Self> {
-        let mut solver = PCGSolver {
-            internal_solver: null_mut(),
-            _hypre: PhantomData,
-        };
-        unsafe {
-            check_hypre!(HYPRE_ParCSRPCGCreate(
-                comm.as_raw(),
-                &mut solver.internal_solver
-            ));
-        }
-        // On error, `solver` is dropped and its handle destroyed.
-        solver.config(config)
-    }
-
-    /// Changes the configuration of the solver
+krylov_solver! {
+    /// Preconditioned Conjugate Gradient solver.
     ///
-    /// Fields set to `None` keep their current value.
+    /// CG requires a symmetric positive definite matrix, so it solves systems
+    /// with a [SymmetricMatrix] only (see [SymmetricLinearSolver]).
     ///
-    /// # Errors
+    /// # Example
     ///
-    /// [HypreError::ConversionError] if a value does not fit hypre's type
-    /// (for example `max_iters` above `i32::MAX`), or the error returned by
-    /// hypre. The solver is dropped then, and fields set before the failing
-    /// one were already applied.
-    pub fn config(self, config: PCGSolverConfig) -> HypreResult<Self> {
-        set_parameter![HYPRE_PCGSetTol, self.internal_solver, config.tol];
-        set_parameter![
-            HYPRE_PCGSetAbsoluteTol,
-            self.internal_solver,
-            config.abs_tol
-        ];
-        set_parameter![
-            HYPRE_PCGSetResidualTol,
-            self.internal_solver,
-            config.res_tol
-        ];
-        set_parameter![
-            HYPRE_PCGSetConvergenceFactorTol,
-            self.internal_solver,
-            config.conv_tol_fact
-        ];
-        set_parameter![HYPRE_PCGSetMaxIter, self.internal_solver, config.max_iters];
-        set_parameter![HYPRE_PCGSetTwoNorm, self.internal_solver, config.two_norm];
-        set_parameter![
-            HYPRE_PCGSetRelChange,
-            self.internal_solver,
-            config.rel_change
-        ];
-        set_parameter![
-            HYPRE_PCGSetRecomputeResidual,
-            self.internal_solver,
-            config.recompute_residual
-        ];
-        set_parameter![
-            HYPRE_PCGSetRecomputeResidualP,
-            self.internal_solver,
-            config.recompute_residual_period
-        ];
-        set_parameter![HYPRE_PCGSetLogging, self.internal_solver, config.logging];
-        set_parameter![
-            HYPRE_PCGSetPrintLevel,
-            self.internal_solver,
-            config.print_level
-        ];
-
-        Ok(self)
-    }
-
-    /// Returns the configuration of the solver
+    /// ```
+    /// use hypre_rs::solvers::PCGSolver;
+    ///
+    /// # fn main() -> Result<(), Box<dyn std::error::Error>> {
+    /// # let universe = mpi::initialize().ok_or("MPI was already initialized (or finalized) in this process")?;
+    /// # let mpi_comm = universe.world();
+    /// # let ctx = hypre_rs::initialize(&universe)?;
+    /// // Create PCGSolver with hypre's default configuration.
+    /// let solver = PCGSolver::new(&ctx, &mpi_comm, Default::default())?;
+    /// # drop(solver);
+    /// # ctx.finalize()?;
+    /// # Ok(())
+    /// # }
+    /// ```
+    solver PCGSolver;
+    /// Conjugate Gradient Solver Configuration
+    ///
+    /// ## Convergence criteria
+    ///
+    /// According to hypre source code, default is
+    /// $$<C*r, r>  < \text{max}({\text{tol}_a^2, tol^2 * <C*b, b>)$$
+    ///
+    /// If res_tol is set, $$||r_\text{new} - r_\text{old}||_C < \text{tol}_r * ||b||_C$$ is used.
+    ///
+    /// If two_norm is set, $$||.||_2$$ norm is used.
     ///
     /// hypre has no getter for `abs_tol`, `recompute_residual` and
-    /// `recompute_residual_period`, which are therefore `None`.
-    pub fn current_config(&self) -> HypreResult<PCGSolverConfig> {
-        let max_iters: usize =
-            get_parameter![HYPRE_PCGGetMaxIter, self.internal_solver, HYPRE_Int]?;
-
-        let two_norm: HYPRE_Int =
-            get_parameter![HYPRE_PCGGetTwoNorm, self.internal_solver, HYPRE_Int]?;
-
-        let rel_change: HYPRE_Int =
-            get_parameter![HYPRE_PCGGetRelChange, self.internal_solver, HYPRE_Int]?;
-
-        let logging: u32 = get_parameter![HYPRE_PCGGetLogging, self.internal_solver, HYPRE_Int]?;
-        let print_level: u32 =
-            get_parameter![HYPRE_PCGGetPrintLevel, self.internal_solver, HYPRE_Int]?;
-
-        let config = PCGSolverConfig {
-            tol: get_parameter![HYPRE_PCGGetTol, self.internal_solver, HYPRE_Real]?,
-            res_tol: get_parameter![HYPRE_PCGGetResidualTol, self.internal_solver, HYPRE_Real]?,
-            conv_tol_fact: get_parameter![
-                HYPRE_PCGGetConvergenceFactorTol,
-                self.internal_solver,
-                HYPRE_Real
-            ]?,
-            max_iters: Some(max_iters),
-            two_norm: Some(two_norm != 0),
-            rel_change: Some(rel_change != 0),
-            logging: Some(logging),
-            print_level: Some(print_level),
-            ..Default::default()
-        };
-
-        Ok(config)
+    /// `recompute_residual_period`, which are therefore `None` in
+    /// [PCGSolver::current_config].
+    config PCGSolverConfig, PCGSolverConfigBuilder;
+    create HYPRE_ParCSRPCGCreate, destroy HYPRE_ParCSRPCGDestroy;
+    setup HYPRE_ParCSRPCGSetup, solve HYPRE_ParCSRPCGSolve;
+    solves SymmetricLinearSolver for SymmetricMatrix;
+    status HYPRE_ParCSRPCGGetNumIterations, HYPRE_ParCSRPCGGetFinalRelativeResidualNorm,
+        converged HYPRE_PCGGetConverged;
+    positive [tol, abs_tol, res_tol, conv_tol_fact];
+    params {
+        /// Relative convergence tolerance
+        tol: f64 => HYPRE_PCGSetTol,
+        /// Absolute convergence tolerance
+        abs_tol: f64 => HYPRE_PCGSetAbsoluteTol,
+        /// Residual convergence tolerance
+        res_tol: f64 => HYPRE_PCGSetResidualTol,
+        /// Convergence factor tolerance, if >0 used for special test for slow convergence
+        conv_tol_fact: f64 => HYPRE_PCGSetConvergenceFactorTol,
+        /// Maximum number of iterations
+        max_iters: usize => HYPRE_PCGSetMaxIter,
+        /// Force using $||.||_2$ instead of $||.||_C$
+        two_norm: bool => HYPRE_PCGSetTwoNorm,
+        /// Convergence only if $x$ didn't change too much in the last iteration
+        rel_change: bool => HYPRE_PCGSetRelChange,
+        /// Force computing an explicit residual if implicit residual convergence
+        recompute_residual: bool => HYPRE_PCGSetRecomputeResidual,
+        /// Periodically recompute an explicit residual
+        recompute_residual_period: usize => HYPRE_PCGSetRecomputeResidualP,
+        /// Logging level (1 stores the residual norms)
+        logging: u32 => HYPRE_PCGSetLogging,
+        /// Print level (0: nothing, 2: residual norm of every iteration)
+        print_level: u32 => HYPRE_PCGSetPrintLevel,
+    }
+    getters {
+        tol: HYPRE_Real => HYPRE_PCGGetTol,
+        res_tol: HYPRE_Real => HYPRE_PCGGetResidualTol,
+        conv_tol_fact: HYPRE_Real => HYPRE_PCGGetConvergenceFactorTol,
+        max_iters: HYPRE_Int => HYPRE_PCGGetMaxIter,
+        two_norm: HYPRE_Int => HYPRE_PCGGetTwoNorm,
+        rel_change: HYPRE_Int => HYPRE_PCGGetRelChange,
+        logging: HYPRE_Int => HYPRE_PCGGetLogging,
+        print_level: HYPRE_Int => HYPRE_PCGGetPrintLevel,
     }
 }
-
-impl SymmetricLinearSolver for PCGSolver<'_> {
-    /// Solves a linear system using Preconditioned Conjugate Gradient algorithm.
-    fn solve(
-        &self,
-        mat: &mut SymmetricMatrix<'_>,
-        rhs: &Vector<'_>,
-        x: &mut Vector<'_>,
-    ) -> HypreResult<IterativeSolverStatus> {
-        unsafe {
-            check_hypre!(HYPRE_PCGSetup(
-                self.internal_solver,
-                mat.get_internal()?,
-                rhs.get_internal()?,
-                x.get_internal()?,
-            ));
-
-            #[allow(clippy::useless_conversion)]
-            match HYPRE_PCGSolve(
-                self.internal_solver,
-                mat.get_internal()?,
-                rhs.get_internal()?,
-                x.get_internal()?,
-            ) {
-                0 => {
-                    let mut res_norm: HYPRE_Real = 0.0.into();
-                    // We do not care about return value of HYPRE_PCGGet functions has they cannot generate new errors
-                    HYPRE_PCGGetFinalRelativeResidualNorm(
-                        self.internal_solver,
-                        &mut res_norm as *mut _,
-                    );
-                    let mut converged: HYPRE_Int = 0.into();
-                    HYPRE_PCGGetConverged(self.internal_solver, &mut converged as *mut _);
-                    let mut num_iters: HYPRE_Int = 0.into();
-                    HYPRE_PCGGetNumIterations(self.internal_solver, &mut num_iters as *mut _);
-                    Ok(IterativeSolverStatus {
-                        num_iters: num_iters.try_into()?,
-                        res_num: res_norm.into(),
-                        converged: (converged != 0),
-                    })
-                }
-                x => Err(HypreError::new(x)),
-            }
-        }
-    }
-}
-
-impl_hypre_drop!(PCGSolver<'_>, internal_solver, HYPRE_ParCSRPCGDestroy);
 
 #[cfg(test)]
 mod tests {
@@ -340,12 +184,10 @@ mod tests {
     #[test]
     fn config_rejects_negative_tolerances() {
         for builder in [
-            PCGSolverConfigBuilder::default().tol(-1.0).clone(),
-            PCGSolverConfigBuilder::default().abs_tol(-1.0).clone(),
-            PCGSolverConfigBuilder::default().res_tol(-1.0).clone(),
-            PCGSolverConfigBuilder::default()
-                .conv_tol_fact(-1.0)
-                .clone(),
+            *PCGSolverConfigBuilder::default().tol(-1.0),
+            *PCGSolverConfigBuilder::default().abs_tol(-1.0),
+            *PCGSolverConfigBuilder::default().res_tol(-1.0),
+            *PCGSolverConfigBuilder::default().conv_tol_fact(-1.0),
         ] {
             assert!(matches!(
                 builder.build(),
