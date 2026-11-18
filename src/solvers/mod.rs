@@ -64,14 +64,14 @@ impl fmt::Display for IterativeSolverStatus {
 pub trait LinearSolver {
     fn solve(
         &self,
-        mat: &mut Matrix,
-        rhs: &Vector,
-        x: &mut Vector,
+        mat: &mut Matrix<'_>,
+        rhs: &Vector<'_>,
+        x: &mut Vector<'_>,
     ) -> HypreResult<IterativeSolverStatus>;
 }
 
 #[enum_dispatch(LinearSolver)]
 #[derive(Debug)]
-pub enum Solver {
-    CG(PCGSolver),
+pub enum Solver<'h> {
+    CG(PCGSolver<'h>),
 }

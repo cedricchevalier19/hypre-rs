@@ -1,19 +1,21 @@
 use crate::error::HypreError;
 use crate::utils::inclusive_bounds;
 use crate::vector::Vector::IJ;
-use crate::HypreResult;
+use crate::{Hypre, HypreResult};
 use hypre_sys::*;
 use itertools::Itertools;
 use std::ffi::c_void;
+use std::marker::PhantomData;
 use std::ops::Range;
 use std::ptr::null_mut;
 
 #[derive(Debug)]
-pub struct IJVector {
+pub struct IJVector<'h> {
     internal: HYPRE_IJVector,
+    _hypre: PhantomData<&'h ()>,
 }
 
-impl IJVector {
+impl<'h> IJVector<'h> {
     /// Creates an IJVector from a communicator [comm] and sizes
     ///
     /// `rows` is the half-open range of global indices owned by the current MPI
@@ -22,10 +24,15 @@ impl IJVector {
     /// # Errors
     ///
     /// [HypreError::InvalidRange] if `rows.start > rows.end`.
-    pub fn new(comm: &impl mpi::topology::Communicator, rows: Range<u32>) -> HypreResult<Self> {
+    pub fn new(
+        _hypre: &'h Hypre<'_>,
+        comm: &impl mpi::topology::Communicator,
+        rows: Range<u32>,
+    ) -> HypreResult<Self> {
         let (lower, upper) = inclusive_bounds(&rows)?;
         let mut out = Self {
             internal: null_mut(),
+            _hypre: PhantomData,
         };
         // If a call below fails, dropping `out` destroys whatever was created.
         unsafe {
@@ -98,18 +105,18 @@ impl IJVector {
     }
 }
 
-impl_hypre_drop!(IJVector, internal, HYPRE_IJVectorDestroy);
+impl_hypre_drop!(IJVector<'_>, internal, HYPRE_IJVectorDestroy);
 
 /// Vector datatype
 ///
 /// This type is generic, to handle the different hypre implementations
 #[derive(Debug)]
-pub enum Vector {
-    /// IJ matrix, defined algebraically
-    IJ(IJVector),
+pub enum Vector<'h> {
+    /// IJ vector, defined algebraically
+    IJ(IJVector<'h>),
 }
 
-impl Vector {
+impl Vector<'_> {
     pub(crate) fn get_internal(&self) -> HypreResult<HYPRE_Vector> {
         match self {
             IJ(m) => m.get_internal(),
