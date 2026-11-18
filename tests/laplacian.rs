@@ -51,7 +51,7 @@ fn laplacian_solution_values() -> Result<(), Box<dyn std::error::Error>> {
             .build()?;
         let solver = SymmetricSolver::CG(ctx.pcg_solver(&comm, config)?);
         assert!(matches!(
-            solver.solve(&mut a, &b, &mut x),
+            solver.solve(&a, &b, &mut x),
             Err(HypreError::HypreConvError)
         ));
 
@@ -63,7 +63,7 @@ fn laplacian_solution_values() -> Result<(), Box<dyn std::error::Error>> {
             .two_norm(true)
             .build()?;
         let solver = SymmetricSolver::CG(ctx.pcg_solver(&comm, config)?);
-        let status = solver.solve(&mut a, &b, &mut x)?;
+        let status = solver.solve(&a, &b, &mut x)?;
         assert!(status.converged, "{status}");
 
         let Vector::IJ(x) = &x;

@@ -46,7 +46,7 @@
 //! // Create new CG solver with previous parameters
 //! let solver = SymmetricSolver::CG(ctx.pcg_solver(&mpi_comm, my_parameters)?);
 //!
-//! let info = solver.solve(&mut matrix, &rhs, &mut x)?;
+//! let info = solver.solve(&matrix, &rhs, &mut x)?;
 //! println!("Solver has converged: {}", info);
 //!
 //! // hypre objects must be dropped before hypre is finalized (checked by the compiler)
