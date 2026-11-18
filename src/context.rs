@@ -2,9 +2,9 @@
 
 use crate::matrix::{CSRMatrix, IJMatrix, SymmetricMatrix};
 use crate::solvers::{
-    BiCGSTABSolver, BiCGSTABSolverConfig, COGMRESSolver, COGMRESSolverConfig, FlexGMRESSolver,
-    FlexGMRESSolverConfig, GMRESSolver, GMRESSolverConfig, LGMRESSolver, LGMRESSolverConfig,
-    PCGSolver, PCGSolverConfig,
+    AMGSolver, AMGSolverConfig, BiCGSTABSolver, BiCGSTABSolverConfig, COGMRESSolver,
+    COGMRESSolverConfig, FlexGMRESSolver, FlexGMRESSolverConfig, GMRESSolver, GMRESSolverConfig,
+    LGMRESSolver, LGMRESSolverConfig, PCGSolver, PCGSolverConfig,
 };
 use crate::vector::IJVector;
 use crate::{HypreError, HypreResult};
@@ -234,6 +234,15 @@ impl HypreContext<'_> {
         config: BiCGSTABSolverConfig,
     ) -> HypreResult<BiCGSTABSolver<'a>> {
         BiCGSTABSolver::new(self, comm, config)
+    }
+
+    /// Creates an [AMGSolver]; see [AMGSolver::new].
+    pub fn amg_solver<'a>(
+        &'a self,
+        comm: &'a impl Communicator,
+        config: AMGSolverConfig,
+    ) -> HypreResult<AMGSolver<'a>> {
+        AMGSolver::new(self, comm, config)
     }
 
     fn finalize_raw() -> hypre_sys::HYPRE_Int {

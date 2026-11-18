@@ -91,6 +91,18 @@ fn main() {
         println!("cargo:rustc-cfg=hypre_has_initialize");
     }
 
+    // hypre < 2.29 has the BoomerAMG parameter getters in the library but
+    // only declares them in an internal header. Let lib.rs declare them.
+    println!("cargo:rustc-check-cfg=cfg(hypre_has_amg_getters)");
+    let parcsr_ls_h = include_dir.join("HYPRE_parcsr_ls.h");
+    println!("cargo:rerun-if-changed={}", parcsr_ls_h.display());
+    let has_amg_getters = std::fs::read_to_string(&parcsr_ls_h)
+        .map(|s| s.contains("HYPRE_BoomerAMGGetTol"))
+        .unwrap_or(false);
+    if has_amg_getters {
+        println!("cargo:rustc-cfg=hypre_has_amg_getters");
+    }
+
     // The bindgen::Builder is the main entry point
     // to bindgen, and lets you build up options for
     // the resulting bindings.

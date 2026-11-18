@@ -11,7 +11,7 @@ use crate::solvers::{IterativeSolverStatus, LinearSolver};
 use crate::{HypreContext, HypreResult, Vector};
 use hypre_sys::*;
 
-krylov_solver! {
+hypre_solver! {
     /// Restarted GMRES (Generalized Minimal RESidual) solver, for general
     /// matrices.
     ///
@@ -72,7 +72,7 @@ krylov_solver! {
     }
 }
 
-krylov_solver! {
+hypre_solver! {
     /// Flexible GMRES solver, for general matrices: allows a preconditioner
     /// that changes from one iteration to the next.
     solver FlexGMRESSolver;
@@ -112,7 +112,7 @@ krylov_solver! {
     }
 }
 
-krylov_solver! {
+hypre_solver! {
     /// LGMRES (Loose GMRES) solver, for general matrices: GMRES whose
     /// restarts keep approximations of the error from previous cycles, which
     /// speeds up convergence.
@@ -155,7 +155,7 @@ krylov_solver! {
     }
 }
 
-krylov_solver! {
+hypre_solver! {
     /// COGMRES (Communication-Optimal GMRES) solver, for general matrices:
     /// GMRES with an orthogonalization that needs fewer global reductions.
     solver COGMRESSolver;

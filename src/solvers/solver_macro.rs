@@ -1,4 +1,4 @@
-//! The `krylov_solver!` macro, which generates the hypre Krylov solvers.
+//! The `hypre_solver!` macro, which generates the hypre solvers.
 
 use crate::HypreResult;
 use hypre_sys::{HYPRE_Int, HYPRE_Real};
@@ -33,7 +33,7 @@ impl FromHypre<HYPRE_Int> for bool {
     }
 }
 
-/// Generates a solver wrapping a ParCSR Krylov solver of hypre:
+/// Generates a solver wrapping a ParCSR solver of hypre:
 ///
 /// - the solver type, owning its `HYPRE_Solver` handle (`new`, `config`,
 ///   `Drop`), implementing the solver trait given by
@@ -49,7 +49,7 @@ impl FromHypre<HYPRE_Int> for bool {
 /// configuration, applied with `Setter` when `Some`. The optional
 /// `getters { field: RawType => Getter }` read them back, converting with
 /// [FromHypre]; parameters without a getter are `None` in `current_config`.
-macro_rules! krylov_solver {
+macro_rules! hypre_solver {
     (
         $(#[$solver_doc:meta])*
         solver $Solver:ident;
@@ -136,7 +136,7 @@ macro_rules! krylov_solver {
                 $(
                     let raw: $raw = get_parameter![$getter, self.internal_solver, $raw]?;
                     config.$gfield = Some(
-                        $crate::solvers::krylov::macros::FromHypre::from_hypre(raw)?,
+                        $crate::solvers::solver_macro::FromHypre::from_hypre(raw)?,
                     );
                 )*
                 Ok(config)
