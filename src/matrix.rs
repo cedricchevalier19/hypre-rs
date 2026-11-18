@@ -259,14 +259,18 @@ impl<'h> IJMatrix<'h> {
 
 impl_hypre_drop!(IJMatrix<'_>, internal_matrix, HYPRE_IJMatrixDestroy);
 
+/// A `(row, col, value)` matrix entry, in hypre's types.
+type Entry = (HYPRE_BigInt, HYPRE_BigInt, HYPRE_Complex);
+
+/// Matrix entries indexed by `(row, col)`.
+type EntryMap = HashMap<(HYPRE_BigInt, HYPRE_BigInt), HYPRE_Complex>;
+
 /// Converts `(row, col, value)` entries to hypre's types.
 ///
 /// # Errors
 ///
 /// The conversion error of the first entry that does not fit.
-fn convert_entries<Id, V>(
-    nnz: impl Iterator<Item = (Id, Id, V)>,
-) -> HypreResult<Vec<(HYPRE_BigInt, HYPRE_BigInt, HYPRE_Complex)>>
+fn convert_entries<Id, V>(nnz: impl Iterator<Item = (Id, Id, V)>) -> HypreResult<Vec<Entry>>
 where
     Id: Copy + TryInto<HYPRE_BigInt>,
     V: Copy + TryInto<HYPRE_Complex>,
@@ -333,9 +337,7 @@ impl Matrix<'_> {
     /// # }
     /// ```
     pub fn is_symmetric(&mut self, tol: f64) -> HypreResult<bool> {
-        if tol.is_nan() || tol < 0.0 {
-            return Err(HypreError::InvalidParameterPositive);
-        }
+        check_tolerance(tol)?;
         let parcsr = self.get_internal()? as HYPRE_ParCSRMatrix;
 
         let (mut num_rows, mut num_cols) = (0, 0);
@@ -362,7 +364,7 @@ impl Matrix<'_> {
         }
 
         // Local entries, read row by row (row_end is inclusive).
-        let mut local = HashMap::new();
+        let mut local = EntryMap::new();
         for row in row_start..=row_end {
             let mut size: HYPRE_Int = 0;
             let mut cols: *mut HYPRE_BigInt = null_mut();
@@ -402,17 +404,9 @@ impl Matrix<'_> {
         };
         let num_ranks = usize::try_from(comm.size())?;
 
-        // First row of every rank: row j belongs to the last rank whose first
-        // row is <= j (ranks that own no rows share the next rank's start).
         let mut starts = vec![HYPRE_BigInt::default(); num_ranks];
         comm.all_gather_into(&row_start, &mut starts[..]);
-        let owner = |row: HYPRE_BigInt| starts.partition_point(|&start| start <= row) - 1;
-
-        // Send each entry a_ij, as (j, i, a_ij), to the owner of row j.
-        let mut by_rank = vec![Vec::new(); num_ranks];
-        for (&(row, col), &value) in &local {
-            by_rank[owner(col)].push((col, row, value));
-        }
+        let by_rank = transposed_by_owner(&local, &starts);
         let send_counts: Vec<Count> = by_rank
             .iter()
             .map(|entries| Count::try_from(entries.len()))
@@ -430,33 +424,35 @@ impl Matrix<'_> {
         let mut recv_indices = vec![HYPRE_BigInt::default(); 2 * num_received];
         let mut recv_values = vec![HYPRE_Complex::default(); num_received];
         {
-            let displs = |counts: &[Count]| -> Vec<Count> {
-                counts
-                    .iter()
-                    .scan(0, |offset, &count| {
-                        let displ = *offset;
-                        *offset += count;
-                        Some(displ)
-                    })
-                    .collect()
-            };
             let pairs = |counts: &[Count]| counts.iter().map(|&c| 2 * c).collect::<Vec<_>>();
             let (send_pairs, recv_pairs) = (pairs(&send_counts), pairs(&recv_counts));
             comm.all_to_all_varcount_into(
-                &Partition::new(&send_indices[..], &send_pairs[..], displs(&send_pairs)),
-                &mut PartitionMut::new(&mut recv_indices[..], &recv_pairs[..], displs(&recv_pairs)),
+                &Partition::new(
+                    &send_indices[..],
+                    &send_pairs[..],
+                    displacements(&send_pairs),
+                ),
+                &mut PartitionMut::new(
+                    &mut recv_indices[..],
+                    &recv_pairs[..],
+                    displacements(&recv_pairs),
+                ),
             );
             comm.all_to_all_varcount_into(
-                &Partition::new(&send_values[..], &send_counts[..], displs(&send_counts)),
+                &Partition::new(
+                    &send_values[..],
+                    &send_counts[..],
+                    displacements(&send_counts),
+                ),
                 &mut PartitionMut::new(
                     &mut recv_values[..],
                     &recv_counts[..],
-                    displs(&recv_counts),
+                    displacements(&recv_counts),
                 ),
             );
         }
         // The transpose of the local rows.
-        let transposed: HashMap<_, _> = recv_indices
+        let transposed: EntryMap = recv_indices
             .iter()
             .copied()
             .step_by(2)
@@ -464,12 +460,7 @@ impl Matrix<'_> {
             .zip(recv_values)
             .collect();
 
-        let close = |key| {
-            let a: HYPRE_Complex = local.get(key).copied().unwrap_or_default();
-            let b: HYPRE_Complex = transposed.get(key).copied().unwrap_or_default();
-            (a - b).abs() <= tol * a.abs().max(b.abs())
-        };
-        let locally_symmetric = local.keys().chain(transposed.keys()).all(close);
+        let locally_symmetric = entries_match(&local, &transposed, tol);
 
         let mut symmetric = false;
         comm.all_reduce_into(
@@ -562,19 +553,8 @@ impl<'h> SymmetricMatrix<'h> {
         let IJ(ij) = &mut self.matrix else {
             return Err(HypreError::NotIJMatrix);
         };
-        let entries = convert_entries(nnz)?;
-        if entries.iter().any(|&(row, col, _)| col > row) {
-            return Err(HypreError::NotLowerTriangular);
-        }
-        let (rows, cols, values): (Vec<_>, Vec<_>, Vec<_>) = entries
-            .iter()
-            .copied()
-            .chain(
-                entries
-                    .iter()
-                    .filter(|&&(row, col, _)| row != col)
-                    .map(|&(row, col, value)| (col, row, value)),
-            )
+        let (rows, cols, values): (Vec<_>, Vec<_>, Vec<_>) = mirror_lower(convert_entries(nnz)?)?
+            .into_iter()
             .multiunzip();
         ij.add_to_values(&rows, &cols, &values)
     }
@@ -703,6 +683,77 @@ impl<'h> From<SymmetricMatrix<'h>> for Matrix<'h> {
     }
 }
 
+/// Checks a relative tolerance: it must be a non-negative number.
+fn check_tolerance(tol: f64) -> HypreResult<()> {
+    if tol.is_nan() || tol < 0.0 {
+        return Err(HypreError::InvalidParameterPositive);
+    }
+    Ok(())
+}
+
+/// Returns the lower-triangle `entries` followed by the transposed copy of
+/// each off-diagonal one.
+///
+/// # Errors
+///
+/// [HypreError::NotLowerTriangular] if an entry has `col > row`.
+fn mirror_lower(mut entries: Vec<Entry>) -> HypreResult<Vec<Entry>> {
+    if entries.iter().any(|&(row, col, _)| col > row) {
+        return Err(HypreError::NotLowerTriangular);
+    }
+    let mirrored: Vec<Entry> = entries
+        .iter()
+        .filter(|&&(row, col, _)| row != col)
+        .map(|&(row, col, value)| (col, row, value))
+        .collect();
+    entries.extend(mirrored);
+    Ok(entries)
+}
+
+/// Returns the MPI rank that owns `row`, given the first row of every rank
+/// (in rank order, non-decreasing).
+///
+/// Row `j` belongs to the last rank whose first row is `<= j`: ranks that
+/// own no rows share the next rank's first row. `row` must be at least
+/// `starts[0]`.
+fn row_owner(starts: &[HYPRE_BigInt], row: HYPRE_BigInt) -> usize {
+    starts.partition_point(|&start| start <= row) - 1
+}
+
+/// Groups the transpose of `local` by owning rank: entry `a_ij` becomes
+/// `(j, i, a_ij)`, sent to the owner of row `j`.
+fn transposed_by_owner(local: &EntryMap, starts: &[HYPRE_BigInt]) -> Vec<Vec<Entry>> {
+    let mut by_rank = vec![Vec::new(); starts.len()];
+    for (&(row, col), &value) in local {
+        by_rank[row_owner(starts, col)].push((col, row, value));
+    }
+    by_rank
+}
+
+/// Exclusive prefix sum of `counts`: where each rank's block starts in an
+/// MPI buffer.
+fn displacements(counts: &[Count]) -> Vec<Count> {
+    counts
+        .iter()
+        .scan(0, |offset, &count| {
+            let displ = *offset;
+            *offset += count;
+            Some(displ)
+        })
+        .collect()
+}
+
+/// Whether `|a - b| <= tol * max(|a|, |b|)` for the entries `a` of `local`
+/// and `b` of `transposed` at every key of either, a missing entry counting
+/// as 0.
+fn entries_match(local: &EntryMap, transposed: &EntryMap, tol: f64) -> bool {
+    local.keys().chain(transposed.keys()).all(|key| {
+        let a = local.get(key).copied().unwrap_or_default();
+        let b = transposed.get(key).copied().unwrap_or_default();
+        (a - b).abs() <= tol * a.abs().max(b.abs())
+    })
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -711,6 +762,7 @@ mod tests {
     /// global error state clean (`HYPRE_IJMatrixDestroy(NULL)` sets the flag).
     #[test]
     fn drop_null_handle() {
+        let _lock = crate::utils::hypre_error_lock();
         drop(IJMatrix {
             internal_matrix: null_mut(),
             _hypre: PhantomData,
@@ -720,5 +772,130 @@ mod tests {
             _hypre: PhantomData,
         });
         assert_eq!(unsafe { hypre_sys::HYPRE_GetError() }, 0);
+    }
+
+    #[test]
+    fn convert_entries_to_hypre_types() -> HypreResult<()> {
+        assert_eq!(
+            convert_entries([(1u32, 2u32, 3.0f64), (4, 5, -6.0)].into_iter())?,
+            vec![(1, 2, 3.0), (4, 5, -6.0)]
+        );
+        assert_eq!(
+            convert_entries(std::iter::empty::<(u32, u32, f64)>())?,
+            vec![]
+        );
+        // An index that does not fit in HYPRE_BigInt, in either position.
+        for entry in [(u64::MAX, 0, 1.0), (0, u64::MAX, 1.0)] {
+            assert!(matches!(
+                convert_entries([(0u64, 0u64, 1.0f64), entry].into_iter()),
+                Err(HypreError::ConversionError(_))
+            ));
+        }
+        Ok(())
+    }
+
+    #[test]
+    fn translate_into_hypre_bigints() {
+        assert_eq!(
+            CSRMatrix::translate_into_hypre_bigints(&[0, 5, 10]).ok(),
+            Some(vec![0, 5, 10])
+        );
+        assert!(CSRMatrix::translate_into_hypre_bigints(&[0, usize::MAX]).is_err());
+    }
+
+    #[test]
+    fn mirror_lower_adds_transposed_off_diagonal_entries() -> HypreResult<()> {
+        assert_eq!(mirror_lower(vec![])?, vec![]);
+        // Diagonal entries are not duplicated.
+        assert_eq!(mirror_lower(vec![(0, 0, 2.0)])?, vec![(0, 0, 2.0)]);
+        assert_eq!(
+            mirror_lower(vec![(1, 1, 2.0), (1, 0, -1.0), (5, 2, 3.0)])?,
+            vec![
+                (1, 1, 2.0),
+                (1, 0, -1.0),
+                (5, 2, 3.0),
+                (0, 1, -1.0),
+                (2, 5, 3.0)
+            ]
+        );
+        assert!(matches!(
+            mirror_lower(vec![(1, 0, -1.0), (0, 1, -1.0)]),
+            Err(HypreError::NotLowerTriangular)
+        ));
+        Ok(())
+    }
+
+    #[test]
+    fn row_owner_with_empty_ranks() {
+        // Rows 0..3 on rank 0, none on rank 1, 3..7 on rank 2, 7.. on rank 3.
+        let starts = [0, 3, 3, 7];
+        let owners: Vec<usize> = (0..10).map(|row| row_owner(&starts, row)).collect();
+        assert_eq!(owners, [0, 0, 0, 2, 2, 2, 2, 3, 3, 3]);
+        // Trailing ranks without rows start at the global number of rows,
+        // which no row reaches.
+        let starts = [0, 4, 4];
+        assert_eq!(row_owner(&starts, 3), 0);
+        // A single rank owns everything.
+        assert_eq!(row_owner(&[0], 1000), 0);
+    }
+
+    #[test]
+    fn transposed_by_owner_groups_by_rank_of_column() {
+        // Rank 0 owns rows 0..2, rank 1 owns rows 2...
+        let starts = [0, 2];
+        let local = EntryMap::from([((0, 0), 1.0), ((0, 3), 2.0), ((1, 2), 3.0)]);
+        let mut by_rank = transposed_by_owner(&local, &starts);
+        for entries in &mut by_rank {
+            entries.sort_by_key(|&(row, col, _)| (row, col));
+        }
+        assert_eq!(
+            by_rank,
+            vec![vec![(0, 0, 1.0)], vec![(2, 1, 3.0), (3, 0, 2.0)]]
+        );
+    }
+
+    #[test]
+    fn displacements_are_exclusive_prefix_sums() {
+        assert_eq!(displacements(&[]), Vec::<Count>::new());
+        assert_eq!(displacements(&[4]), vec![0]);
+        assert_eq!(displacements(&[2, 0, 3, 1]), vec![0, 2, 2, 5]);
+    }
+
+    #[test]
+    fn entries_match_with_tolerance() {
+        let local = EntryMap::from([((0, 1), 1.0), ((1, 1), 2.0)]);
+        assert!(entries_match(&local, &local, 0.0));
+        assert!(entries_match(&EntryMap::new(), &EntryMap::new(), 0.0));
+
+        // Slightly different values: only accepted with a tolerance.
+        let close = EntryMap::from([((0, 1), 1.0 + 1e-10), ((1, 1), 2.0)]);
+        assert!(!entries_match(&local, &close, 0.0));
+        assert!(entries_match(&local, &close, 1e-8));
+        assert!(entries_match(&close, &local, 1e-8));
+
+        // A missing entry counts as 0, on either side.
+        let missing = EntryMap::from([((1, 1), 2.0)]);
+        assert!(!entries_match(&local, &missing, 0.5));
+        assert!(!entries_match(&missing, &local, 0.5));
+        let explicit_zero = EntryMap::from([((0, 1), 0.0), ((1, 1), 2.0)]);
+        assert!(entries_match(&explicit_zero, &missing, 0.0));
+        // A relative tolerance of 1 accepts anything.
+        assert!(entries_match(&local, &missing, 1.0));
+    }
+
+    #[test]
+    fn check_tolerance_rejects_negative_and_nan() {
+        for tol in [0.0, 1e-12, 1.0, f64::INFINITY] {
+            assert!(check_tolerance(tol).is_ok(), "{tol}");
+        }
+        for tol in [-1e-12, -1.0, f64::NAN, f64::NEG_INFINITY] {
+            assert!(
+                matches!(
+                    check_tolerance(tol),
+                    Err(HypreError::InvalidParameterPositive)
+                ),
+                "{tol}"
+            );
+        }
     }
 }

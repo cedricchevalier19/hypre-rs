@@ -57,6 +57,15 @@ pub(crate) fn inclusive_bounds(range: &Range<u32>) -> HypreResult<(HYPRE_BigInt,
     Ok((lower, end - 1))
 }
 
+/// Serializes the unit tests that read or change hypre's global error flag:
+/// tests of one binary run in parallel threads.
+#[cfg(test)]
+pub(crate) fn hypre_error_lock() -> std::sync::MutexGuard<'static, ()> {
+    static LOCK: std::sync::Mutex<()> = std::sync::Mutex::new(());
+    // A failed test poisons the lock; the others can still run.
+    LOCK.lock().unwrap_or_else(|poisoned| poisoned.into_inner())
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -70,6 +79,37 @@ mod tests {
             inclusive_bounds(&Range { start: 5, end: 3 }),
             Err(HypreError::InvalidRange)
         ));
+        // A reversed empty range is rejected too, not only a "negative" one.
+        assert!(matches!(
+            inclusive_bounds(&Range { start: 1, end: 0 }),
+            Err(HypreError::InvalidRange)
+        ));
         Ok(())
+    }
+
+    #[test]
+    fn inclusive_bounds_largest_range() {
+        // u32::MAX fits in a 64-bit HYPRE_BigInt, not in a 32-bit one.
+        // Widened to i128 to compare the same way for both sizes.
+        let bounds = inclusive_bounds(&(0..u32::MAX)).map(|(l, u)| (i128::from(l), i128::from(u)));
+        if size_of::<HYPRE_BigInt>() == 8 {
+            assert_eq!(bounds.ok(), Some((0, i128::from(u32::MAX) - 1)));
+        } else {
+            assert!(matches!(bounds, Err(HypreError::ConversionError(_))));
+        }
+    }
+
+    #[test]
+    fn discard_error_clears_hypre_error_flag() {
+        let _lock = hypre_error_lock();
+        discard_error(0);
+        assert_eq!(unsafe { hypre_sys::HYPRE_GetError() }, 0);
+
+        // Destroying a null handle is a hypre error that sets the flag.
+        let code = unsafe { hypre_sys::HYPRE_IJVectorDestroy(std::ptr::null_mut()) };
+        assert_ne!(code, 0);
+        assert_ne!(unsafe { hypre_sys::HYPRE_GetError() }, 0);
+        discard_error(code);
+        assert_eq!(unsafe { hypre_sys::HYPRE_GetError() }, 0);
     }
 }
