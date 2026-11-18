@@ -136,7 +136,7 @@ macro_rules! krylov_solver {
                 $(
                     let raw: $raw = get_parameter![$getter, self.internal_solver, $raw]?;
                     config.$gfield = Some(
-                        $crate::solvers::krylov_macro::FromHypre::from_hypre(raw)?,
+                        $crate::solvers::krylov::macros::FromHypre::from_hypre(raw)?,
                     );
                 )*
                 Ok(config)
