@@ -72,15 +72,15 @@ fn symmetry_check() -> Result<(), Box<dyn std::error::Error>> {
         drop((a, x, solver));
 
         // The check also works on the CSR format.
-        let mut ij = laplacian(&ctx, &comm, rows.clone(), &[])?;
+        let ij = laplacian(&ctx, &comm, rows.clone(), &[])?;
         assert!(ij.is_symmetric(0.0)?);
         let Matrix::IJ(ij) = ij else { unreachable!() };
-        let mut csr = Matrix::ParCSR(CSRMatrix::try_from(ij)?);
+        let csr = Matrix::ParCSR(CSRMatrix::try_from(ij)?);
         assert!(csr.is_symmetric(0.0)?);
         drop(csr);
 
         // An entry without its transposed one, across ranks when size > 1.
-        let mut m = laplacian(&ctx, &comm, rows.clone(), &[(N - 1, 0, 1.0)])?;
+        let m = laplacian(&ctx, &comm, rows.clone(), &[(N - 1, 0, 1.0)])?;
         assert!(!m.is_symmetric(0.0)?);
         // A missing transposed entry counts as 0: no tolerance below 1 hides it.
         assert!(!m.is_symmetric(0.5)?);
@@ -91,13 +91,13 @@ fn symmetry_check() -> Result<(), Box<dyn std::error::Error>> {
 
         // The unchecked conversion accepts it anyway, and gives it back.
         let m = laplacian(&ctx, &comm, rows.clone(), &[(N - 1, 0, 1.0)])?;
-        let mut m = Matrix::from(SymmetricMatrix::from_matrix_unchecked(m));
+        let m = Matrix::from(SymmetricMatrix::from_matrix_unchecked(m));
         assert!(!m.is_symmetric(0.0)?);
         drop(m);
 
         // Both entries, but slightly different values: tolerance matters.
         let pair = [(N - 1, 0, 1.0), (0, N - 1, 1.0 + 1e-10)];
-        let mut m = laplacian(&ctx, &comm, rows.clone(), &pair)?;
+        let m = laplacian(&ctx, &comm, rows.clone(), &pair)?;
         assert!(!m.is_symmetric(0.0)?);
         assert!(m.is_symmetric(1e-8)?);
         drop(m);
@@ -105,7 +105,7 @@ fn symmetry_check() -> Result<(), Box<dyn std::error::Error>> {
         assert!(SymmetricMatrix::try_from_with_tolerance(m, 1e-8).is_ok());
 
         // An explicit zero without its transposed entry is still symmetric.
-        let mut m = laplacian(&ctx, &comm, rows.clone(), &[(N - 1, 0, 0.0)])?;
+        let m = laplacian(&ctx, &comm, rows.clone(), &[(N - 1, 0, 0.0)])?;
         assert!(m.is_symmetric(0.0)?);
 
         // Invalid tolerances.
@@ -122,6 +122,17 @@ fn symmetry_check() -> Result<(), Box<dyn std::error::Error>> {
         let mut ij = IJMatrix::new(&ctx, &comm, rows.clone(), cols)?;
         ij.add_elements(rows.clone().map(|i| (i, i, 1.0)))?;
         assert!(!Matrix::IJ(ij).is_symmetric(0.0)?);
+
+        // A matrix built from its lower triangle is exactly symmetric, and
+        // Matrix methods work on it through Deref.
+        let mut s = ctx.symmetric_matrix(&comm, rows.clone())?;
+        s.add_elements(rows.clone().map(|i| (i, i, 2.0)))?;
+        s.add_elements(rows.clone().filter(|&i| i > 0).map(|i| (i, i - 1, -1.0)))?;
+        s.add_elements(rows.clone().filter(|&i| i >= 3).map(|i| (i, i - 3, 0.25)))?;
+        assert!(s.is_symmetric(0.0)?);
+        let as_matrix: &Matrix<'_> = &s;
+        assert!(as_matrix.is_symmetric(0.0)?);
+        drop(s);
 
         // Only rank 0 owns rows: the others have nothing to send.
         let first_only = if rank == 0 { 0..4 } else { 4..4 };
