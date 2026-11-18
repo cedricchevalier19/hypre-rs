@@ -39,7 +39,7 @@ static INITIALIZED: AtomicBool = AtomicBool::new(false);
 /// # use mpi::topology::Communicator;
 /// use hypre_rs::matrix::IJMatrix;
 ///
-/// let universe = mpi::initialize().ok_or("MPI is already initialized")?;
+/// let universe = mpi::initialize().ok_or("MPI was already initialized (or finalized) in this process")?;
 /// let comm = universe.world();
 /// let ctx = hypre_rs::initialize(&universe)?;
 /// let (rank, size) = (comm.rank() as u32, comm.size() as u32);
@@ -58,7 +58,7 @@ static INITIALIZED: AtomicBool = AtomicBool::new(false);
 /// ```compile_fail,E0505
 /// # use mpi::topology::Communicator;
 /// # use hypre_rs::matrix::IJMatrix;
-/// let universe = mpi::initialize().ok_or("MPI is already initialized")?;
+/// let universe = mpi::initialize().ok_or("MPI was already initialized (or finalized) in this process")?;
 /// let comm = universe.world();
 /// let ctx = hypre_rs::initialize(&universe)?;
 /// let matrix = IJMatrix::new(&ctx, &comm, 0..0, 0..0)?;
@@ -71,7 +71,7 @@ static INITIALIZED: AtomicBool = AtomicBool::new(false);
 ///
 /// ```compile_fail,E0505
 /// # use mpi::topology::Communicator;
-/// let universe = mpi::initialize().ok_or("MPI is already initialized")?;
+/// let universe = mpi::initialize().ok_or("MPI was already initialized (or finalized) in this process")?;
 /// let ctx = hypre_rs::initialize(&universe)?;
 /// let comm = universe.world().duplicate();
 /// let vector = ctx.ij_vector(&comm, 0..0)?;
@@ -83,7 +83,7 @@ static INITIALIZED: AtomicBool = AtomicBool::new(false);
 /// Nor does finalizing MPI while hypre is initialized:
 ///
 /// ```compile_fail,E0505
-/// let universe = mpi::initialize().ok_or("MPI is already initialized")?;
+/// let universe = mpi::initialize().ok_or("MPI was already initialized (or finalized) in this process")?;
 /// let ctx = hypre_rs::initialize(&universe)?;
 /// drop(universe); // error: `universe` is still borrowed by `ctx`
 /// ctx.finalize()?;

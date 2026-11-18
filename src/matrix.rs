@@ -130,7 +130,7 @@ impl<'h> IJMatrix<'h> {
     /// # use mpi::initialize;
     /// # use mpi::topology::Communicator;
     /// use hypre_rs::matrix::IJMatrix;
-    /// # let universe = mpi::initialize().ok_or("MPI is already initialized")?;
+    /// # let universe = mpi::initialize().ok_or("MPI was already initialized (or finalized) in this process")?;
     /// # let ctx = hypre_rs::initialize(&universe)?;
     /// # let mpi_comm = universe.world();
     /// let global_size: u32 = 100;
@@ -189,7 +189,7 @@ impl<'h> IJMatrix<'h> {
     /// # use mpi::initialize;
     /// # use mpi::topology::Communicator;
     /// use hypre_rs::matrix::IJMatrix;
-    /// # let universe = mpi::initialize().ok_or("MPI is already initialized")?;
+    /// # let universe = mpi::initialize().ok_or("MPI was already initialized (or finalized) in this process")?;
     /// # let ctx = hypre_rs::initialize(&universe)?;
     /// # let mpi_comm = universe.world();
     /// # let global_size: u32 = 100;

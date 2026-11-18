@@ -10,7 +10,8 @@ use mpi::topology::Communicator;
 #[test]
 fn ij_to_csr_conversion_outlives_ij() -> Result<(), Box<dyn std::error::Error>> {
     // Keep the universe alive: dropping it calls MPI_Finalize.
-    let universe = mpi::initialize().ok_or("MPI is already initialized")?;
+    let universe =
+        mpi::initialize().ok_or("MPI was already initialized (or finalized) in this process")?;
     let comm = universe.world();
     let ctx = hypre_rs::initialize(&universe)?;
     {

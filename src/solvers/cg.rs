@@ -82,7 +82,7 @@ impl PCGSolverConfigBuilder {
 /// use hypre_rs::solvers::PCGSolver;
 ///
 /// # fn main() -> Result<(), Box<dyn std::error::Error>> {
-/// # let universe = mpi::initialize().ok_or("MPI is already initialized")?;
+/// # let universe = mpi::initialize().ok_or("MPI was already initialized (or finalized) in this process")?;
 /// # let mpi_comm = universe.world();
 /// # let ctx = hypre_rs::initialize(&universe)?;
 /// // Create PCGSolver with hypre's default configuration.
@@ -228,7 +228,8 @@ mod tests {
     #[test]
     fn config_test() -> Result<(), Box<dyn std::error::Error>> {
         // Keep the universe alive: dropping it calls MPI_Finalize.
-        let universe = mpi::initialize().ok_or("MPI is already initialized")?;
+        let universe = mpi::initialize()
+            .ok_or("MPI was already initialized (or finalized) in this process")?;
         let mpi_comm = universe.world();
         let ctx = crate::initialize(&universe)?;
         // Only one hypre context may be alive.

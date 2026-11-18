@@ -14,7 +14,7 @@
 //! use hypre_rs::solvers::{PCGSolverConfigBuilder, Solver};
 //! use hypre_rs::solvers::LinearSolver;
 //!
-//! let universe = mpi::initialize().ok_or("MPI is already initialized")?;
+//! let universe = mpi::initialize().ok_or("MPI was already initialized (or finalized) in this process")?;
 //! let mpi_comm = universe.world();
 //!
 //! let ctx = hypre_rs::initialize(&universe)?;

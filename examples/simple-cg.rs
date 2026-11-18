@@ -4,7 +4,8 @@ use hypre_rs::{Matrix, Vector};
 use mpi::topology::Communicator;
 
 fn main() -> Result<(), Box<dyn std::error::Error>> {
-    let universe = mpi::initialize().ok_or("MPI is already initialized")?;
+    let universe =
+        mpi::initialize().ok_or("MPI was already initialized (or finalized) in this process")?;
     let mpi_comm = universe.world();
 
     let ctx = hypre_rs::initialize(&universe)?;
