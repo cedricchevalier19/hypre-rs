@@ -90,9 +90,10 @@ mod tests {
     #[test]
     fn inclusive_bounds_largest_range() {
         // u32::MAX fits in a 64-bit HYPRE_BigInt, not in a 32-bit one.
-        let bounds = inclusive_bounds(&(0..u32::MAX));
+        // Widened to i128 to compare the same way for both sizes.
+        let bounds = inclusive_bounds(&(0..u32::MAX)).map(|(l, u)| (i128::from(l), i128::from(u)));
         if size_of::<HYPRE_BigInt>() == 8 {
-            assert_eq!(bounds.ok(), Some((0, HYPRE_BigInt::from(u32::MAX) - 1)));
+            assert_eq!(bounds.ok(), Some((0, i128::from(u32::MAX) - 1)));
         } else {
             assert!(matches!(bounds, Err(HypreError::ConversionError(_))));
         }
