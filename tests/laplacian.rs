@@ -56,16 +56,16 @@ fn laplacian_solution_values() -> Result<(), Box<dyn std::error::Error>> {
             Err(HypreError::HypreConvError)
         ));
 
-        // CG converges in at most N iterations on this system.
+        // In exact arithmetic CG converges in at most N iterations; a solve
+        // that does not converge within max_iters returns HypreConvError.
         let config = PCGSolverConfigBuilder::default()
             .tol(1e-12)
-            .max_iters(2 * N as usize)
+            .max_iters(N as usize)
             .two_norm(true)
             .build()?;
         let solver = Solver::CG(ctx.pcg_solver(&comm, config)?);
         let status = solver.solve(&mut a, &b, &mut x)?;
         assert!(status.converged, "{status}");
-        assert!(status.num_iters <= N as usize, "{status}");
 
         let Vector::IJ(x) = &x;
         let values = x.get_values(rows.clone())?;
