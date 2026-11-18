@@ -210,26 +210,30 @@ impl<'h> IJMatrix<'h> {
         HypreError: From<<Id as TryInto<HYPRE_BigInt>>::Error>,
         HypreError: From<<V as TryInto<HYPRE_Complex>>::Error>,
     {
-        let (mut rows, mut cols, mut values): (Vec<_>, Vec<_>, Vec<_>) = nnz
-            .into_iter()
-            .map(|nnz| {
-                (
-                    nnz.0.try_into().unwrap_or_default(),
-                    nnz.1.try_into().unwrap_or_default(),
-                    nnz.2.try_into().unwrap_or_default(),
-                )
-            })
-            .multiunzip();
-        let mut ncols = vec![1 as HYPRE_Int; rows.len()];
+        let (rows, cols, values): (Vec<_>, Vec<_>, Vec<_>) =
+            convert_entries(nnz)?.into_iter().multiunzip();
+        self.add_to_values(&rows, &cols, &values)
+    }
 
+    /// Adds `values[k]` to entry `(rows[k], cols[k])` for every `k`.
+    fn add_to_values(
+        &mut self,
+        rows: &[HYPRE_BigInt],
+        cols: &[HYPRE_BigInt],
+        values: &[HYPRE_Complex],
+    ) -> HypreResult<()> {
+        debug_assert!(rows.len() == cols.len() && rows.len() == values.len());
+        // One column per "row" entry: hypre reads entry k as
+        // (rows[k], cols[k], values[k]).
+        let mut ncols = vec![1 as HYPRE_Int; rows.len()];
         unsafe {
             check_hypre!(HYPRE_IJMatrixAddToValues(
                 self.internal_matrix,
                 rows.len().try_into()?,
                 ncols.as_mut_ptr(),
-                cols.as_mut_ptr(),
-                rows.as_mut_ptr(),
-                values.as_mut_ptr()
+                rows.as_ptr(),
+                cols.as_ptr(),
+                values.as_ptr()
             ));
         }
         Ok(())
@@ -247,6 +251,24 @@ impl<'h> IJMatrix<'h> {
 }
 
 impl_hypre_drop!(IJMatrix<'_>, internal_matrix, HYPRE_IJMatrixDestroy);
+
+/// Converts `(row, col, value)` entries to hypre's types.
+///
+/// # Errors
+///
+/// The conversion error of the first entry that does not fit.
+fn convert_entries<Id, V>(
+    nnz: impl Iterator<Item = (Id, Id, V)>,
+) -> HypreResult<Vec<(HYPRE_BigInt, HYPRE_BigInt, HYPRE_Complex)>>
+where
+    Id: Copy + TryInto<HYPRE_BigInt>,
+    V: Copy + TryInto<HYPRE_Complex>,
+    HypreError: From<<Id as TryInto<HYPRE_BigInt>>::Error>,
+    HypreError: From<<V as TryInto<HYPRE_Complex>>::Error>,
+{
+    nnz.map(|(row, col, value)| Ok((row.try_into()?, col.try_into()?, value.try_into()?)))
+        .collect()
+}
 
 /// Matrix datatype
 ///
