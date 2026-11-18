@@ -44,6 +44,10 @@ pub(crate) fn discard_error(code: hypre_sys::HYPRE_Int) {
 ///
 /// An empty range `n..n` becomes `(n, n - 1)`, which hypre accepts for an
 /// MPI rank that owns no rows.
+// `HYPRE_BigInt` is `i64` or `i32` depending on how hypre was built
+// (`--enable-bigint`). The conversions below are infallible only in the first
+// case, where clippy flags them.
+#[allow(clippy::unnecessary_fallible_conversions)]
 pub(crate) fn inclusive_bounds(range: &Range<u32>) -> HypreResult<(HYPRE_BigInt, HYPRE_BigInt)> {
     if range.start > range.end {
         return Err(HypreError::InvalidRange);

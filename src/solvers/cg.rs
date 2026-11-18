@@ -251,14 +251,43 @@ mod tests {
                 .two_norm(true)
                 .recompute_residual_period(8usize)
                 .build()?;
-            let solver = PCGSolver::new(&ctx, &mpi_comm, my_parameters.clone())?;
+            let solver = PCGSolver::new(&ctx, &mpi_comm, my_parameters)?;
             let parameters = solver.current_config()?;
             println!("{:?}", parameters);
             assert_eq!(my_parameters.tol, parameters.tol);
             assert_eq!(my_parameters.max_iters, parameters.max_iters);
             assert_eq!(my_parameters.two_norm, parameters.two_norm);
+
+            // `config` changes an existing solver; unset fields keep their value.
+            let other_parameters = PCGSolverConfigBuilder::default()
+                .tol(1e-3)
+                .max_iters(7usize)
+                .build()?;
+            let solver = solver.config(other_parameters)?;
+            let parameters = solver.current_config()?;
+            assert_eq!(parameters.tol, Some(1e-3));
+            assert_eq!(parameters.max_iters, Some(7));
+            assert_eq!(parameters.two_norm, my_parameters.two_norm);
         }
         ctx.finalize()?;
         Ok(())
+    }
+
+    #[test]
+    fn config_rejects_negative_tolerances() {
+        for builder in [
+            PCGSolverConfigBuilder::default().tol(-1.0).clone(),
+            PCGSolverConfigBuilder::default().abs_tol(-1.0).clone(),
+            PCGSolverConfigBuilder::default().res_tol(-1.0).clone(),
+            PCGSolverConfigBuilder::default()
+                .conv_tol_fact(-1.0)
+                .clone(),
+        ] {
+            assert!(matches!(
+                builder.build(),
+                Err(HypreError::InvalidParameterPositive)
+            ));
+        }
+        assert!(PCGSolverConfigBuilder::default().tol(0.0).build().is_ok());
     }
 }
