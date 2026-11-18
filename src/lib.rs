@@ -2,6 +2,8 @@
 //!
 //! This crate provides a Rust designed interface on [hypre] library.
 //!
+//! [hypre]: https://computing.llnl.gov/projects/hypre-scalable-linear-solvers-multigrid-methods
+//!
 //! # Motivating example
 //!
 //! Here is a small example of a call to hypre's CG solver.
