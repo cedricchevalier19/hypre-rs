@@ -1,6 +1,15 @@
 # hypre-rs: A Rust Interface to the hypre Library
 This crate provides a Rust interface to the [hypre](https://computing.llnl.gov/projects/hypre-scalable-linear-solvers-multigrid-methods) library.
 
+## Documentation
+The API documentation of the `master` branch is published at
+<https://cedricchevalier19.github.io/hypre-rs/>. It is rebuilt on every push to `master`.
+
+To build it locally:
+```bash
+cargo doc --no-deps --all-features -p hypre-rs --open
+```
+
 ## Getting Started
 ### Prerequisites
 - The hypre library must be installed on your system before you can use hypre-rs.
