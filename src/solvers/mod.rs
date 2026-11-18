@@ -25,7 +25,7 @@ mod cg;
 use std::fmt;
 use std::fmt::Formatter;
 
-use crate::matrix::Matrix;
+use crate::matrix::SymmetricMatrix;
 use crate::{HypreResult, Vector};
 pub use cg::PCGSolver;
 pub use cg::PCGSolverConfig;
@@ -60,18 +60,24 @@ impl fmt::Display for IterativeSolverStatus {
     }
 }
 
+/// Solver for linear systems whose matrix is symmetric.
 #[enum_dispatch]
-pub trait LinearSolver {
+pub trait SymmetricLinearSolver {
+    /// Solves `mat * x = rhs`, starting from the current value of `x`.
+    ///
+    /// Assembles `mat`, `rhs` and `x`, so it is collective.
     fn solve(
         &self,
-        mat: &mut Matrix<'_>,
+        mat: &mut SymmetricMatrix<'_>,
         rhs: &Vector<'_>,
         x: &mut Vector<'_>,
     ) -> HypreResult<IterativeSolverStatus>;
 }
 
-#[enum_dispatch(LinearSolver)]
+/// Solvers for symmetric matrices, chosen at runtime.
+#[enum_dispatch(SymmetricLinearSolver)]
 #[derive(Debug)]
-pub enum Solver<'h> {
+pub enum SymmetricSolver<'h> {
+    /// Conjugate Gradient, for symmetric positive definite matrices.
     CG(PCGSolver<'h>),
 }

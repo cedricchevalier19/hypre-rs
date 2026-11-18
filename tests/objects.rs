@@ -48,12 +48,38 @@ fn create_objects() -> Result<(), Box<dyn std::error::Error>> {
             IJMatrix::new(&ctx, &comm, 0..1, reversed.clone()),
             Err(HypreError::InvalidRange)
         ));
-        let v = ctx.ij_vector(&comm, rows.clone())?;
+        assert!(matches!(
+            ctx.symmetric_matrix(&comm, reversed.clone()),
+            Err(HypreError::InvalidRange)
+        ));
+        let mut v = ctx.ij_vector(&comm, rows.clone())?;
         assert!(matches!(
             v.get_values(reversed),
             Err(HypreError::InvalidRange)
         ));
+
+        // An index that does not fit in HYPRE_BigInt is an error, and nothing
+        // is added (it used to be replaced by 0).
+        assert!(matches!(
+            v.add_elements([(0, 1.0), (u64::MAX, 1.0)].into_iter()),
+            Err(HypreError::ConversionError(_))
+        ));
+        assert!(v.get_values(rows.clone())?.iter().all(|&x| x == 0.0));
         drop(v);
+
+        // Symmetric matrices take lower-triangle entries only; a rejected
+        // call adds nothing.
+        let mut s = ctx.symmetric_matrix(&comm, rows.clone())?;
+        s.add_elements(rows.clone().map(|i| (i, i, 1.0)))?;
+        assert!(matches!(
+            s.add_elements([(1u32, 0u32, 1.0), (0, 1, 1.0)].into_iter()),
+            Err(HypreError::NotLowerTriangular)
+        ));
+        assert!(matches!(
+            s.add_elements([(0u64, 0u64, 1.0), (u64::MAX, 0, 1.0)].into_iter()),
+            Err(HypreError::ConversionError(_))
+        ));
+        drop(s);
 
         // An empty ParCSR matrix, partitioned like `rows`.
         let starts = [rows.start as usize, rows.end as usize];

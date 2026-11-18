@@ -1,8 +1,8 @@
 //! Solves a 1D Laplacian whose exact solution is known, and checks the
 //! values of the solution, not just that the solver converged.
 
-use hypre_rs::solvers::{LinearSolver, PCGSolverConfigBuilder, Solver};
-use hypre_rs::{HypreError, Matrix, Vector};
+use hypre_rs::solvers::{PCGSolverConfigBuilder, SymmetricLinearSolver, SymmetricSolver};
+use hypre_rs::{HypreError, Vector};
 use mpi::topology::Communicator;
 
 /// Global number of rows; not a multiple of 2 or 3, so ranks get uneven rows.
@@ -20,19 +20,18 @@ fn laplacian_solution_values() -> Result<(), Box<dyn std::error::Error>> {
         let rows = (rank * N / size)..((rank + 1) * N / size);
 
         // tridiag(-1, 2, -1): A * [1, ..., 1] = [1, 0, ..., 0, 1].
-        let mut a = ctx.ij_matrix(&comm, rows.clone(), rows.clone())?;
+        // Only the lower triangle is given; the super-diagonal comes from
+        // symmetry, and for the first local row it belongs to the previous
+        // rank. A wrong mirroring would give a wrong solution below.
+        let mut a = ctx.symmetric_matrix(&comm, rows.clone())?;
         let mut entries = Vec::new();
         for i in rows.clone() {
             if i > 0 {
                 entries.push((i, i - 1, -1.0));
             }
             entries.push((i, i, 2.0));
-            if i + 1 < N {
-                entries.push((i, i + 1, -1.0));
-            }
         }
         a.add_elements(entries.into_iter())?;
-        let mut a = Matrix::IJ(a);
 
         let mut b = ctx.ij_vector(&comm, rows.clone())?;
         b.add_elements(
@@ -50,7 +49,7 @@ fn laplacian_solution_values() -> Result<(), Box<dyn std::error::Error>> {
             .tol(1e-12)
             .max_iters(1usize)
             .build()?;
-        let solver = Solver::CG(ctx.pcg_solver(&comm, config)?);
+        let solver = SymmetricSolver::CG(ctx.pcg_solver(&comm, config)?);
         assert!(matches!(
             solver.solve(&mut a, &b, &mut x),
             Err(HypreError::HypreConvError)
@@ -63,7 +62,7 @@ fn laplacian_solution_values() -> Result<(), Box<dyn std::error::Error>> {
             .max_iters(N as usize)
             .two_norm(true)
             .build()?;
-        let solver = Solver::CG(ctx.pcg_solver(&comm, config)?);
+        let solver = SymmetricSolver::CG(ctx.pcg_solver(&comm, config)?);
         let status = solver.solve(&mut a, &b, &mut x)?;
         assert!(status.converged, "{status}");
 

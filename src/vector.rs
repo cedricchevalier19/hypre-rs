@@ -63,42 +63,31 @@ impl<'h> IJVector<'h> {
         Ok(out)
     }
 
-    // Helper function for preparing non-zero elements
-    fn get_elements<'a, Id, V>(
-        &mut self,
-        nnz: impl Iterator<Item = (Id, V)>,
-    ) -> (Vec<HYPRE_BigInt>, Vec<HYPRE_Complex>)
+    /// Adds `value` to entry `index` for every `(index, value)` of `nnz`.
+    ///
+    /// # Errors
+    ///
+    /// [HypreError::ConversionError] if an index or value does not fit
+    /// hypre's types (nothing is added then), or the error returned by hypre.
+    pub fn add_elements<Id, V>(&mut self, nnz: impl Iterator<Item = (Id, V)>) -> HypreResult<()>
     where
-        Id: Copy + TryInto<HYPRE_BigInt> + 'a,
-        V: Copy + TryInto<HYPRE_Complex> + 'a,
+        Id: Copy + TryInto<HYPRE_BigInt>,
+        V: Copy + TryInto<HYPRE_Complex>,
         HypreError: From<<Id as TryInto<HYPRE_BigInt>>::Error>,
         HypreError: From<<V as TryInto<HYPRE_Complex>>::Error>,
     {
-        nnz.into_iter()
-            .map(|nnz| {
-                (
-                    nnz.0.try_into().unwrap_or_default(),
-                    nnz.1.try_into().unwrap_or_default(),
-                )
-            })
-            .multiunzip()
-    }
-
-    pub fn add_elements<'a, Id, V>(&mut self, nnz: impl Iterator<Item = (Id, V)>) -> HypreResult<()>
-    where
-        Id: Copy + TryInto<HYPRE_BigInt> + 'a,
-        V: Copy + TryInto<HYPRE_Complex> + 'a,
-        HypreError: From<<Id as TryInto<HYPRE_BigInt>>::Error>,
-        HypreError: From<<V as TryInto<HYPRE_Complex>>::Error>,
-    {
-        let (mut indices, mut values) = self.get_elements(nnz);
+        let (indices, values): (Vec<HYPRE_BigInt>, Vec<HYPRE_Complex>) = nnz
+            .map(|(index, value)| Ok((index.try_into()?, value.try_into()?)))
+            .collect::<HypreResult<Vec<_>>>()?
+            .into_iter()
+            .multiunzip();
 
         unsafe {
             check_hypre!(HYPRE_IJVectorAddToValues(
                 self.internal,
                 indices.len().try_into()?,
-                indices.as_mut_ptr(),
-                values.as_mut_ptr(),
+                indices.as_ptr(),
+                values.as_ptr(),
             ));
         }
         Ok(())
