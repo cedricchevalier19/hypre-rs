@@ -1,7 +1,7 @@
 use crate::error::HypreError;
 use crate::matrix::Matrix::{ParCSR, IJ};
 use crate::utils::inclusive_bounds;
-use crate::{Hypre, HypreResult};
+use crate::{HypreContext, HypreResult};
 use hypre_sys::{
     HYPRE_BigInt, HYPRE_Complex, HYPRE_IJMatrix, HYPRE_IJMatrixAddToValues, HYPRE_IJMatrixAssemble,
     HYPRE_IJMatrixCreate, HYPRE_IJMatrixDestroy, HYPRE_IJMatrixGetObject, HYPRE_IJMatrixInitialize,
@@ -36,7 +36,7 @@ impl<'h> CSRMatrix<'h> {
     }
 
     pub fn new(
-        _hypre: &'h Hypre<'_>,
+        _hypre: &'h HypreContext<'_>,
         comm: &'h impl Communicator,
         global_num_rows: usize,
         global_num_cols: usize,
@@ -131,20 +131,20 @@ impl<'h> IJMatrix<'h> {
     /// # use mpi::topology::Communicator;
     /// use hypre_rs::matrix::IJMatrix;
     /// # let universe = mpi::initialize().unwrap();
-    /// # let hypre = hypre_rs::initialize(&universe)?;
+    /// # let ctx = hypre_rs::initialize(&universe)?;
     /// # let mpi_comm = universe.world();
     /// let global_size: u32 = 100;
     /// let (rank, size) = (mpi_comm.rank() as u32, mpi_comm.size() as u32);
     /// let begin = rank * global_size / size;
     /// let end = (rank + 1) * global_size / size;
-    /// let ij_matrix = IJMatrix::new(&hypre, &mpi_comm, begin..end, begin..end)?;
+    /// let ij_matrix = IJMatrix::new(&ctx, &mpi_comm, begin..end, begin..end)?;
     /// # drop(ij_matrix);
-    /// # hypre.finalize()?;
+    /// # ctx.finalize()?;
     /// # Ok(())
     /// # }
     /// ```
     pub fn new(
-        _hypre: &'h Hypre<'_>,
+        _hypre: &'h HypreContext<'_>,
         comm: &'h impl mpi::topology::Communicator,
         rows: Range<u32>,
         cols: Range<u32>,
@@ -190,16 +190,16 @@ impl<'h> IJMatrix<'h> {
     /// # use mpi::topology::Communicator;
     /// use hypre_rs::matrix::IJMatrix;
     /// # let universe = mpi::initialize().unwrap();
-    /// # let hypre = hypre_rs::initialize(&universe)?;
+    /// # let ctx = hypre_rs::initialize(&universe)?;
     /// # let mpi_comm = universe.world();
     /// # let global_size: u32 = 100;
     /// # let (rank, size) = (mpi_comm.rank() as u32, mpi_comm.size() as u32);
     /// # let local_begin = rank * global_size / size;
     /// # let local_end = (rank + 1) * global_size / size;
-    /// let mut ij_matrix = IJMatrix::new(&hypre, &mpi_comm, local_begin..local_end, local_begin..local_end)?;
+    /// let mut ij_matrix = IJMatrix::new(&ctx, &mpi_comm, local_begin..local_end, local_begin..local_end)?;
     /// ij_matrix.add_elements::<u32, f64>((local_begin..local_end).map(|id| (id, id, 1.0f64)));
     /// # drop(ij_matrix);
-    /// # hypre.finalize()
+    /// # ctx.finalize()
     /// # }
     /// ```
     pub fn add_elements<Id, V>(&mut self, nnz: impl Iterator<Item = (Id, Id, V)>) -> HypreResult<()>

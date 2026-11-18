@@ -7,7 +7,7 @@ fn main() {
     let universe = mpi::initialize().unwrap();
     let mpi_comm = universe.world();
 
-    let hypre = hypre_rs::initialize(&universe).unwrap();
+    let ctx = hypre_rs::initialize(&universe).unwrap();
 
     // Define matrix sizes
     let mesh_size: u32 = 10;
@@ -20,7 +20,7 @@ fn main() {
     let local_rows = local_begin..local_end;
 
     // Create a new matrix
-    let mut ij_matrix = hypre
+    let mut ij_matrix = ctx
         .ij_matrix(&mpi_comm, local_rows.clone(), local_rows.clone())
         .unwrap();
 
@@ -47,11 +47,11 @@ fn main() {
         nnz_buffer.clear();
     }
 
-    let mut rhs = hypre.ij_vector(&mpi_comm, local_rows.clone()).unwrap();
+    let mut rhs = ctx.ij_vector(&mpi_comm, local_rows.clone()).unwrap();
     rhs.add_elements((local_begin..local_end).map(|i| (i, i as f64)))
         .unwrap();
 
-    let mut x = hypre.ij_vector(&mpi_comm, local_rows.clone()).unwrap();
+    let mut x = ctx.ij_vector(&mpi_comm, local_rows.clone()).unwrap();
     x.add_elements((local_begin..local_end).map(|i| (i, 0f64)))
         .unwrap();
 
@@ -65,7 +65,7 @@ fn main() {
         .unwrap();
 
     // Create new CG solver with previous parameters
-    let solver = Solver::CG(hypre.pcg_solver(&mpi_comm, my_parameters).unwrap());
+    let solver = Solver::CG(ctx.pcg_solver(&mpi_comm, my_parameters).unwrap());
 
     let mut c_matrix = Matrix::IJ(ij_matrix);
     let c_rhs = Vector::IJ(rhs);
@@ -77,5 +77,5 @@ fn main() {
 
     // hypre objects must be dropped before hypre is finalized (checked by the compiler)
     drop((solver, c_matrix, c_rhs, c_x));
-    hypre.finalize().unwrap()
+    ctx.finalize().unwrap()
 }

@@ -1,4 +1,4 @@
-//! hypre's global state: initialization, finalization and the [Hypre] token.
+//! The [HypreContext]: hypre initialization, finalization and object creation.
 
 use crate::matrix::{CSRMatrix, IJMatrix};
 use crate::solvers::{PCGSolver, PCGSolverConfig};
@@ -11,12 +11,13 @@ use std::marker::PhantomData;
 use std::ops::Range;
 use std::sync::atomic::{AtomicBool, Ordering};
 
-/// Whether a [Hypre] token is alive (hypre is initialized).
+/// Whether a [HypreContext] is alive (hypre is initialized).
 static INITIALIZED: AtomicBool = AtomicBool::new(false);
 
-/// Proof that hypre is initialized, borrowing the MPI [Universe].
+/// A hypre context: proof that hypre is initialized, borrowing the MPI
+/// [Universe].
 ///
-/// Every hypre object borrows this token and its MPI communicator, so the
+/// Every hypre object borrows this context and its MPI communicator, so the
 /// borrow checker guarantees that:
 ///
 /// - all hypre objects are dropped before hypre is finalized,
@@ -24,11 +25,12 @@ static INITIALIZED: AtomicBool = AtomicBool::new(false);
 ///   `MPI_Finalize`), and
 /// - a communicator outlives the hypre objects that use it.
 ///
-/// Objects are created either with their `new` constructor or with the
-/// factory methods of the token ([Hypre::ij_matrix], [Hypre::ij_vector],
-/// [Hypre::csr_matrix], [Hypre::pcg_solver]).
+/// Objects are created either with the factory methods of the context
+/// ([HypreContext::ij_matrix], [HypreContext::ij_vector],
+/// [HypreContext::csr_matrix], [HypreContext::pcg_solver]) or with their `new`
+/// constructor.
 ///
-/// Only one token can exist at a time. It is neither `Send` nor `Sync`:
+/// Only one context can exist at a time. It is neither `Send` nor `Sync`:
 /// hypre objects are created and used on the thread that initialized hypre.
 ///
 /// # Example
@@ -39,15 +41,15 @@ static INITIALIZED: AtomicBool = AtomicBool::new(false);
 ///
 /// let universe = mpi::initialize().unwrap();
 /// let comm = universe.world();
-/// let hypre = hypre_rs::initialize(&universe)?;
+/// let ctx = hypre_rs::initialize(&universe)?;
 /// let (rank, size) = (comm.rank() as u32, comm.size() as u32);
 /// let rows = (rank * 10 / size)..((rank + 1) * 10 / size);
 ///
-/// let matrix = hypre.ij_matrix(&comm, rows.clone(), rows.clone())?;
+/// let matrix = ctx.ij_matrix(&comm, rows.clone(), rows.clone())?;
 /// // Same as the factory method above.
-/// let other = IJMatrix::new(&hypre, &comm, rows.clone(), rows)?;
+/// let other = IJMatrix::new(&ctx, &comm, rows.clone(), rows)?;
 /// drop((matrix, other));
-/// hypre.finalize()?;
+/// ctx.finalize()?;
 /// # Ok::<(), hypre_rs::HypreError>(())
 /// ```
 ///
@@ -58,9 +60,9 @@ static INITIALIZED: AtomicBool = AtomicBool::new(false);
 /// # use hypre_rs::matrix::IJMatrix;
 /// let universe = mpi::initialize().unwrap();
 /// let comm = universe.world();
-/// let hypre = hypre_rs::initialize(&universe)?;
-/// let matrix = IJMatrix::new(&hypre, &comm, 0..0, 0..0)?;
-/// hypre.finalize()?; // error: `hypre` is still borrowed by `matrix`
+/// let ctx = hypre_rs::initialize(&universe)?;
+/// let matrix = IJMatrix::new(&ctx, &comm, 0..0, 0..0)?;
+/// ctx.finalize()?; // error: `ctx` is still borrowed by `matrix`
 /// drop(matrix);
 /// # Ok::<(), hypre_rs::HypreError>(())
 /// ```
@@ -70,9 +72,9 @@ static INITIALIZED: AtomicBool = AtomicBool::new(false);
 /// ```compile_fail,E0505
 /// # use mpi::topology::Communicator;
 /// let universe = mpi::initialize().unwrap();
-/// let hypre = hypre_rs::initialize(&universe)?;
+/// let ctx = hypre_rs::initialize(&universe)?;
 /// let comm = universe.world().duplicate();
-/// let vector = hypre.ij_vector(&comm, 0..0)?;
+/// let vector = ctx.ij_vector(&comm, 0..0)?;
 /// drop(comm); // error: `comm` is still borrowed by `vector`
 /// drop(vector);
 /// # Ok::<(), hypre_rs::HypreError>(())
@@ -82,25 +84,25 @@ static INITIALIZED: AtomicBool = AtomicBool::new(false);
 ///
 /// ```compile_fail,E0505
 /// let universe = mpi::initialize().unwrap();
-/// let hypre = hypre_rs::initialize(&universe)?;
-/// drop(universe); // error: `universe` is still borrowed by `hypre`
-/// hypre.finalize()?;
+/// let ctx = hypre_rs::initialize(&universe)?;
+/// drop(universe); // error: `universe` is still borrowed by `ctx`
+/// ctx.finalize()?;
 /// # Ok::<(), hypre_rs::HypreError>(())
 /// ```
 #[derive(Debug)]
-pub struct Hypre<'u> {
-    /// Borrows the universe; the raw pointer makes the token `!Send + !Sync`.
+pub struct HypreContext<'u> {
+    /// Borrows the universe; the raw pointer makes the context `!Send + !Sync`.
     _universe: PhantomData<(&'u Universe, *const ())>,
 }
 
-/// Initializes hypre (`HYPRE_Initialize`) and returns the token that hypre
+/// Initializes hypre (`HYPRE_Initialize`) and returns the context that hypre
 /// objects borrow.
 ///
 /// # Errors
 ///
-/// [HypreError::AlreadyInitialized] if another [Hypre] token is alive, or the
+/// [HypreError::AlreadyInitialized] if another [HypreContext] is alive, or the
 /// error returned by hypre.
-pub fn initialize(_universe: &Universe) -> HypreResult<Hypre<'_>> {
+pub fn initialize(_universe: &Universe) -> HypreResult<HypreContext<'_>> {
     if INITIALIZED.swap(true, Ordering::SeqCst) {
         return Err(HypreError::AlreadyInitialized);
     }
@@ -109,15 +111,15 @@ pub fn initialize(_universe: &Universe) -> HypreResult<Hypre<'_>> {
         INITIALIZED.store(false, Ordering::SeqCst);
         return Err(HypreError::new(code));
     }
-    Ok(Hypre {
+    Ok(HypreContext {
         _universe: PhantomData,
     })
 }
 
-impl Hypre<'_> {
+impl HypreContext<'_> {
     /// Finalizes hypre (`HYPRE_Finalize`), reporting its error.
     ///
-    /// Dropping the token also finalizes hypre, but ignores the error.
+    /// Dropping the context also finalizes hypre, but ignores the error.
     pub fn finalize(self) -> HypreResult<()> {
         let code = Self::finalize_raw();
         std::mem::forget(self);
@@ -181,7 +183,7 @@ impl Hypre<'_> {
     }
 }
 
-impl Drop for Hypre<'_> {
+impl Drop for HypreContext<'_> {
     fn drop(&mut self) {
         crate::utils::discard_error(Self::finalize_raw());
     }

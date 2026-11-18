@@ -6,7 +6,7 @@ use crate::error::HypreError;
 use crate::solvers::{IterativeSolverStatus, LinearSolver};
 
 use crate::matrix::Matrix;
-use crate::{Hypre, HypreResult, Vector};
+use crate::{HypreContext, HypreResult, Vector};
 use hypre_sys::*;
 use mpi;
 use std::marker::PhantomData;
@@ -83,16 +83,16 @@ impl PCGSolverConfigBuilder {
 ///
 /// # let universe = mpi::initialize().unwrap();
 /// # let mpi_comm = universe.world();
-/// # let hypre = hypre_rs::initialize(&universe).unwrap();
+/// # let ctx = hypre_rs::initialize(&universe).unwrap();
 /// // Create PCGSolver with hypre's default configuration.
-/// let solver = PCGSolver::new(&hypre, &mpi_comm, Default::default()).unwrap();
+/// let solver = PCGSolver::new(&ctx, &mpi_comm, Default::default()).unwrap();
 /// # drop(solver);
-/// # hypre.finalize().unwrap();
+/// # ctx.finalize().unwrap();
 /// ```
 impl<'h> PCGSolver<'h> {
     /// Creates a new PCGSolver according to the given configuration
     pub fn new(
-        _hypre: &'h Hypre<'_>,
+        _hypre: &'h HypreContext<'_>,
         comm: &'h impl mpi::topology::Communicator,
         config: PCGSolverConfig,
     ) -> HypreResult<Self> {
@@ -227,8 +227,8 @@ mod tests {
         // Keep the universe alive: dropping it calls MPI_Finalize.
         let universe = mpi::initialize().unwrap();
         let mpi_comm = universe.world();
-        let hypre = crate::initialize(&universe).unwrap();
-        // Only one hypre token may be alive.
+        let ctx = crate::initialize(&universe).unwrap();
+        // Only one hypre context may be alive.
         assert!(matches!(
             crate::initialize(&universe),
             Err(HypreError::AlreadyInitialized)
@@ -236,7 +236,7 @@ mod tests {
 
         // Solvers must be destroyed before hypre is finalized.
         {
-            let solver = PCGSolver::new(&hypre, &mpi_comm, Default::default()).unwrap();
+            let solver = PCGSolver::new(&ctx, &mpi_comm, Default::default()).unwrap();
 
             let parameters = solver.current_config();
             println!("{:?}", parameters);
@@ -248,13 +248,13 @@ mod tests {
                 .recompute_residual_period(8usize)
                 .build()
                 .unwrap();
-            let solver = PCGSolver::new(&hypre, &mpi_comm, my_parameters.clone()).unwrap();
+            let solver = PCGSolver::new(&ctx, &mpi_comm, my_parameters.clone()).unwrap();
             let parameters = solver.current_config().unwrap();
             println!("{:?}", parameters);
             assert_eq!(my_parameters.tol, parameters.tol);
             assert_eq!(my_parameters.max_iters, parameters.max_iters);
             assert_eq!(my_parameters.two_norm, parameters.two_norm);
         }
-        hypre.finalize().unwrap();
+        ctx.finalize().unwrap();
     }
 }

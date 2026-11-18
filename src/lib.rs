@@ -17,15 +17,15 @@
 //! let universe = mpi::initialize().unwrap();
 //! let mpi_comm = universe.world();
 //!
-//! let hypre = hypre_rs::initialize(&universe)?;
+//! let ctx = hypre_rs::initialize(&universe)?;
 //!
 //! // Split the 12 rows between the MPI ranks
 //! let (rank, size) = (mpi_comm.rank() as u32, mpi_comm.size() as u32);
 //! let rows = (rank * 12 / size)..((rank + 1) * 12 / size);
 //!
-//! let mut matrix = Matrix::IJ(hypre.ij_matrix(&mpi_comm, rows.clone(), rows.clone())?);
-//! let rhs = Vector::IJ(hypre.ij_vector(&mpi_comm, rows.clone())?);
-//! let mut x = Vector::IJ(hypre.ij_vector(&mpi_comm, rows)?);
+//! let mut matrix = Matrix::IJ(ctx.ij_matrix(&mpi_comm, rows.clone(), rows.clone())?);
+//! let rhs = Vector::IJ(ctx.ij_vector(&mpi_comm, rows.clone())?);
+//! let mut x = Vector::IJ(ctx.ij_vector(&mpi_comm, rows)?);
 //!
 //! // CG solver parameters
 //! let my_parameters = PCGSolverConfigBuilder::default()
@@ -36,7 +36,7 @@
 //!             .build()?;
 //!
 //! // Create new CG solver with previous parameters
-//! let solver = Solver::CG(hypre.pcg_solver(&mpi_comm, my_parameters)?);
+//! let solver = Solver::CG(ctx.pcg_solver(&mpi_comm, my_parameters)?);
 //!
 //! match solver.solve(&mut matrix, &rhs, &mut x) {
 //!     Ok(info) => println!("Solver has converged: {}", info),
@@ -45,7 +45,7 @@
 //!
 //! // hypre objects must be dropped before hypre is finalized (checked by the compiler)
 //! drop((solver, matrix, rhs, x));
-//! hypre.finalize()?;
+//! ctx.finalize()?;
 //! # Ok(())
 //! # }
 //! ```
@@ -70,5 +70,5 @@ pub use error::HypreError;
 pub use matrix::Matrix;
 pub use vector::Vector;
 
-mod env;
-pub use env::{initialize, Hypre};
+mod context;
+pub use context::{initialize, HypreContext};

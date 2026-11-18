@@ -1,7 +1,7 @@
 use crate::error::HypreError;
 use crate::utils::inclusive_bounds;
 use crate::vector::Vector::IJ;
-use crate::{Hypre, HypreResult};
+use crate::{HypreContext, HypreResult};
 use hypre_sys::*;
 use itertools::Itertools;
 use std::ffi::c_void;
@@ -25,7 +25,7 @@ impl<'h> IJVector<'h> {
     ///
     /// [HypreError::InvalidRange] if `rows.start > rows.end`.
     pub fn new(
-        _hypre: &'h Hypre<'_>,
+        _hypre: &'h HypreContext<'_>,
         comm: &'h impl mpi::topology::Communicator,
         rows: Range<u32>,
     ) -> HypreResult<Self> {
