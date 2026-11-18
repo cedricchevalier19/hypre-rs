@@ -117,6 +117,15 @@ impl<'h> PCGSolver<'h> {
     }
 
     /// Changes the configuration of the solver
+    ///
+    /// Fields set to `None` keep their current value.
+    ///
+    /// # Errors
+    ///
+    /// [HypreError::ConversionError] if a value does not fit hypre's type
+    /// (for example `max_iters` above `i32::MAX`), or the error returned by
+    /// hypre. The solver is dropped then, and fields set before the failing
+    /// one were already applied.
     pub fn config(self, config: PCGSolverConfig) -> HypreResult<Self> {
         set_parameter![HYPRE_PCGSetTol, self.internal_solver, config.tol];
         set_parameter![
@@ -128,6 +137,11 @@ impl<'h> PCGSolver<'h> {
             HYPRE_PCGSetResidualTol,
             self.internal_solver,
             config.res_tol
+        ];
+        set_parameter![
+            HYPRE_PCGSetConvergenceFactorTol,
+            self.internal_solver,
+            config.conv_tol_fact
         ];
         set_parameter![HYPRE_PCGSetMaxIter, self.internal_solver, config.max_iters];
         set_parameter![HYPRE_PCGSetTwoNorm, self.internal_solver, config.two_norm];
@@ -146,17 +160,23 @@ impl<'h> PCGSolver<'h> {
             self.internal_solver,
             config.recompute_residual_period
         ];
+        set_parameter![HYPRE_PCGSetLogging, self.internal_solver, config.logging];
+        set_parameter![
+            HYPRE_PCGSetPrintLevel,
+            self.internal_solver,
+            config.print_level
+        ];
 
         Ok(self)
     }
 
     /// Returns the configuration of the solver
+    ///
+    /// hypre has no getter for `abs_tol`, `recompute_residual` and
+    /// `recompute_residual_period`, which are therefore `None`.
     pub fn current_config(&self) -> HypreResult<PCGSolverConfig> {
-        let max_iters: HYPRE_Int =
+        let max_iters: usize =
             get_parameter![HYPRE_PCGGetMaxIter, self.internal_solver, HYPRE_Int]?;
-        if max_iters.is_negative() {
-            return Err(HypreError::HypreGenericError);
-        }
 
         let two_norm: HYPRE_Int =
             get_parameter![HYPRE_PCGGetTwoNorm, self.internal_solver, HYPRE_Int]?;
@@ -164,12 +184,23 @@ impl<'h> PCGSolver<'h> {
         let rel_change: HYPRE_Int =
             get_parameter![HYPRE_PCGGetRelChange, self.internal_solver, HYPRE_Int]?;
 
+        let logging: u32 = get_parameter![HYPRE_PCGGetLogging, self.internal_solver, HYPRE_Int]?;
+        let print_level: u32 =
+            get_parameter![HYPRE_PCGGetPrintLevel, self.internal_solver, HYPRE_Int]?;
+
         let config = PCGSolverConfig {
             tol: get_parameter![HYPRE_PCGGetTol, self.internal_solver, HYPRE_Real]?,
             res_tol: get_parameter![HYPRE_PCGGetResidualTol, self.internal_solver, HYPRE_Real]?,
-            max_iters: Some(max_iters as usize),
+            conv_tol_fact: get_parameter![
+                HYPRE_PCGGetConvergenceFactorTol,
+                self.internal_solver,
+                HYPRE_Real
+            ]?,
+            max_iters: Some(max_iters),
             two_norm: Some(two_norm != 0),
             rel_change: Some(rel_change != 0),
+            logging: Some(logging),
+            print_level: Some(print_level),
             ..Default::default()
         };
 
@@ -230,6 +261,8 @@ mod tests {
     use super::*;
     #[test]
     fn config_test() -> Result<(), Box<dyn std::error::Error>> {
+        // hypre calls return its global error flag, which other unit tests set.
+        let _lock = crate::utils::hypre_error_lock();
         // Keep the universe alive: dropping it calls MPI_Finalize.
         let universe = mpi::initialize()
             .ok_or("MPI was already initialized (or finalized) in this process")?;
@@ -271,6 +304,44 @@ mod tests {
             assert_eq!(parameters.tol, Some(1e-3));
             assert_eq!(parameters.max_iters, Some(7));
             assert_eq!(parameters.two_norm, my_parameters.two_norm);
+
+            // Every field that hypre can read back round-trips.
+            let all_parameters = PCGSolverConfigBuilder::default()
+                .tol(1e-4)
+                .res_tol(1e-5)
+                .conv_tol_fact(0.5)
+                .max_iters(42usize)
+                .two_norm(false)
+                .rel_change(true)
+                .logging(1u32)
+                .print_level(2u32)
+                .build()?;
+            let solver = solver.config(all_parameters)?;
+            let parameters = solver.current_config()?;
+            assert_eq!(parameters.tol, Some(1e-4));
+            assert_eq!(parameters.res_tol, Some(1e-5));
+            assert_eq!(parameters.conv_tol_fact, Some(0.5));
+            assert_eq!(parameters.max_iters, Some(42));
+            assert_eq!(parameters.two_norm, Some(false));
+            assert_eq!(parameters.rel_change, Some(true));
+            assert_eq!(parameters.logging, Some(1));
+            assert_eq!(parameters.print_level, Some(2));
+            // hypre has no getter for these.
+            assert_eq!(parameters.abs_tol, None);
+            assert_eq!(parameters.recompute_residual, None);
+            assert_eq!(parameters.recompute_residual_period, None);
+            drop(solver);
+
+            // A value that does not fit hypre's int is an error, not a panic.
+            if usize::try_from(HYPRE_Int::MAX).is_ok_and(|max| max < usize::MAX) {
+                let too_many = PCGSolverConfigBuilder::default()
+                    .max_iters(usize::MAX)
+                    .build()?;
+                assert!(matches!(
+                    PCGSolver::new(&ctx, &mpi_comm, too_many),
+                    Err(HypreError::ConversionError(_))
+                ));
+            }
         }
         ctx.finalize()?;
         Ok(())

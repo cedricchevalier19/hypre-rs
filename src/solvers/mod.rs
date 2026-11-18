@@ -1,13 +1,18 @@
 use enum_dispatch::enum_dispatch;
 
+/// Calls the hypre setter `$func` on `$obj` if `$param` is `Some`, converting
+/// the value to the setter's type; returns early on a conversion or hypre
+/// error.
 macro_rules! set_parameter {
     ( $func:expr, $obj:expr, $param:expr ) => {{
         if let Some(p_value) = $param {
-            check_hypre!(unsafe { $func($obj, p_value.try_into().unwrap()) });
+            check_hypre!(unsafe { $func($obj, p_value.try_into()?) });
         }
     }};
 }
 
+/// Calls the hypre getter `$func` on `$obj`, reading a `$t`, and converts it
+/// to the expected type. Evaluates to a `HypreResult`.
 macro_rules! get_parameter {
     ( $func:expr, $obj:expr, $t:ty ) => {{
         let mut p_t: $t = Default::default();
@@ -15,7 +20,7 @@ macro_rules! get_parameter {
         if err != 0 {
             Err(HypreError::new(err))
         } else {
-            Ok(p_t.try_into().unwrap())
+            p_t.try_into().map_err(HypreError::from)
         }
     }};
 }
@@ -80,4 +85,27 @@ pub trait SymmetricLinearSolver {
 pub enum SymmetricSolver<'h> {
     /// Conjugate Gradient, for symmetric positive definite matrices.
     CG(PCGSolver<'h>),
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn status_display() {
+        let mut status = IterativeSolverStatus {
+            num_iters: 12,
+            res_num: 0.5,
+            converged: true,
+        };
+        assert_eq!(
+            status.to_string(),
+            "Solver has converged in 12 iterations, reaching a relative residual of 0.5"
+        );
+        status.converged = false;
+        assert_eq!(
+            status.to_string(),
+            "Solver has NOT converged in 12 iterations, reaching a relative residual of 0.5"
+        );
+    }
 }
