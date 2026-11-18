@@ -18,6 +18,8 @@ fn ij_to_csr_conversion_outlives_ij() {
         let (b, e) = (rank * 10 / size, (rank + 1) * 10 / size);
         let mut ij = IJMatrix::new(&comm, b..e, b..e).unwrap();
         ij.add_elements((b..e).map(|i| (i, i, 2.0f64))).unwrap();
+        // `try_from` consumes `ij`: the IJMatrix is destroyed here, while its
+        // ParCSR object is handed over to (and later destroyed by) `matrix`.
         let mut matrix = Matrix::ParCSR(CSRMatrix::try_from(ij).unwrap());
 
         let mut rhs = IJVector::new(&comm, b..e).unwrap();
