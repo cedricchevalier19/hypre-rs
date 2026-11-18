@@ -93,7 +93,7 @@ impl<'h> PCGSolver<'h> {
     /// Creates a new PCGSolver according to the given configuration
     pub fn new(
         _hypre: &'h Hypre<'_>,
-        comm: &impl mpi::topology::Communicator,
+        comm: &'h impl mpi::topology::Communicator,
         config: PCGSolverConfig,
     ) -> HypreResult<Self> {
         let mut solver = PCGSolver {

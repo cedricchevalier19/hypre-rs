@@ -1,7 +1,5 @@
 extern crate hypre_rs;
-use hypre_rs::matrix::IJMatrix;
-use hypre_rs::solvers::{LinearSolver, PCGSolver, PCGSolverConfigBuilder, Solver};
-use hypre_rs::vector::IJVector;
+use hypre_rs::solvers::{LinearSolver, PCGSolverConfigBuilder, Solver};
 use hypre_rs::{Matrix, Vector};
 use mpi::topology::Communicator;
 
@@ -22,8 +20,9 @@ fn main() {
     let local_rows = local_begin..local_end;
 
     // Create a new matrix
-    let mut ij_matrix =
-        IJMatrix::new(&hypre, &mpi_comm, local_rows.clone(), local_rows.clone()).unwrap();
+    let mut ij_matrix = hypre
+        .ij_matrix(&mpi_comm, local_rows.clone(), local_rows.clone())
+        .unwrap();
 
     // Fill the matrix
     let mut nnz_buffer = Vec::<(u32, u32, f64)>::with_capacity(5);
@@ -48,11 +47,11 @@ fn main() {
         nnz_buffer.clear();
     }
 
-    let mut rhs = IJVector::new(&hypre, &mpi_comm, local_rows.clone()).unwrap();
+    let mut rhs = hypre.ij_vector(&mpi_comm, local_rows.clone()).unwrap();
     rhs.add_elements((local_begin..local_end).map(|i| (i, i as f64)))
         .unwrap();
 
-    let mut x = IJVector::new(&hypre, &mpi_comm, local_rows.clone()).unwrap();
+    let mut x = hypre.ij_vector(&mpi_comm, local_rows.clone()).unwrap();
     x.add_elements((local_begin..local_end).map(|i| (i, 0f64)))
         .unwrap();
 
@@ -66,7 +65,7 @@ fn main() {
         .unwrap();
 
     // Create new CG solver with previous parameters
-    let solver = Solver::CG(PCGSolver::new(&hypre, &mpi_comm, my_parameters).unwrap());
+    let solver = Solver::CG(hypre.pcg_solver(&mpi_comm, my_parameters).unwrap());
 
     let mut c_matrix = Matrix::IJ(ij_matrix);
     let c_rhs = Vector::IJ(rhs);

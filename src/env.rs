@@ -1,9 +1,14 @@
 //! hypre's global state: initialization, finalization and the [Hypre] token.
 
+use crate::matrix::{CSRMatrix, IJMatrix};
+use crate::solvers::{PCGSolver, PCGSolverConfig};
+use crate::vector::IJVector;
 use crate::{HypreError, HypreResult};
 use hypre_sys::{HYPRE_Finalize, HYPRE_Initialize};
 use mpi::environment::Universe;
+use mpi::topology::Communicator;
 use std::marker::PhantomData;
+use std::ops::Range;
 use std::sync::atomic::{AtomicBool, Ordering};
 
 /// Whether a [Hypre] token is alive (hypre is initialized).
@@ -11,12 +16,17 @@ static INITIALIZED: AtomicBool = AtomicBool::new(false);
 
 /// Proof that hypre is initialized, borrowing the MPI [Universe].
 ///
-/// Every hypre object borrows this token, so the borrow checker guarantees
-/// that:
+/// Every hypre object borrows this token and its MPI communicator, so the
+/// borrow checker guarantees that:
 ///
-/// - all hypre objects are dropped before hypre is finalized, and
+/// - all hypre objects are dropped before hypre is finalized,
 /// - hypre is finalized before MPI (dropping the `Universe` calls
-///   `MPI_Finalize`).
+///   `MPI_Finalize`), and
+/// - a communicator outlives the hypre objects that use it.
+///
+/// Objects are created either with their `new` constructor or with the
+/// factory methods of the token ([Hypre::ij_matrix], [Hypre::ij_vector],
+/// [Hypre::csr_matrix], [Hypre::pcg_solver]).
 ///
 /// Only one token can exist at a time. It is neither `Send` nor `Sync`:
 /// hypre objects are created and used on the thread that initialized hypre.
@@ -28,13 +38,15 @@ static INITIALIZED: AtomicBool = AtomicBool::new(false);
 /// use hypre_rs::matrix::IJMatrix;
 ///
 /// let universe = mpi::initialize().unwrap();
-/// let hypre = hypre_rs::initialize(&universe)?;
 /// let comm = universe.world();
+/// let hypre = hypre_rs::initialize(&universe)?;
 /// let (rank, size) = (comm.rank() as u32, comm.size() as u32);
 /// let rows = (rank * 10 / size)..((rank + 1) * 10 / size);
 ///
-/// let matrix = IJMatrix::new(&hypre, &comm, rows.clone(), rows)?;
-/// drop(matrix);
+/// let matrix = hypre.ij_matrix(&comm, rows.clone(), rows.clone())?;
+/// // Same as the factory method above.
+/// let other = IJMatrix::new(&hypre, &comm, rows.clone(), rows)?;
+/// drop((matrix, other));
 /// hypre.finalize()?;
 /// # Ok::<(), hypre_rs::HypreError>(())
 /// ```
@@ -45,11 +57,24 @@ static INITIALIZED: AtomicBool = AtomicBool::new(false);
 /// # use mpi::topology::Communicator;
 /// # use hypre_rs::matrix::IJMatrix;
 /// let universe = mpi::initialize().unwrap();
-/// let hypre = hypre_rs::initialize(&universe)?;
 /// let comm = universe.world();
+/// let hypre = hypre_rs::initialize(&universe)?;
 /// let matrix = IJMatrix::new(&hypre, &comm, 0..0, 0..0)?;
 /// hypre.finalize()?; // error: `hypre` is still borrowed by `matrix`
 /// drop(matrix);
+/// # Ok::<(), hypre_rs::HypreError>(())
+/// ```
+///
+/// Nor does freeing a communicator still used by a hypre object:
+///
+/// ```compile_fail,E0505
+/// # use mpi::topology::Communicator;
+/// let universe = mpi::initialize().unwrap();
+/// let hypre = hypre_rs::initialize(&universe)?;
+/// let comm = universe.world().duplicate();
+/// let vector = hypre.ij_vector(&comm, 0..0)?;
+/// drop(comm); // error: `comm` is still borrowed by `vector`
+/// drop(vector);
 /// # Ok::<(), hypre_rs::HypreError>(())
 /// ```
 ///
@@ -100,6 +125,53 @@ impl Hypre<'_> {
             0 => Ok(()),
             code => Err(HypreError::new(code)),
         }
+    }
+
+    /// Creates an [IJMatrix]; see [IJMatrix::new].
+    pub fn ij_matrix<'a>(
+        &'a self,
+        comm: &'a impl Communicator,
+        rows: Range<u32>,
+        cols: Range<u32>,
+    ) -> HypreResult<IJMatrix<'a>> {
+        IJMatrix::new(self, comm, rows, cols)
+    }
+
+    /// Creates a [CSRMatrix]; see [CSRMatrix::new].
+    pub fn csr_matrix<'a>(
+        &'a self,
+        comm: &'a impl Communicator,
+        global_num_rows: usize,
+        global_num_cols: usize,
+        row_starts: &[usize],
+        col_starts: &[usize],
+    ) -> HypreResult<CSRMatrix<'a>> {
+        CSRMatrix::new(
+            self,
+            comm,
+            global_num_rows,
+            global_num_cols,
+            row_starts,
+            col_starts,
+        )
+    }
+
+    /// Creates an [IJVector]; see [IJVector::new].
+    pub fn ij_vector<'a>(
+        &'a self,
+        comm: &'a impl Communicator,
+        rows: Range<u32>,
+    ) -> HypreResult<IJVector<'a>> {
+        IJVector::new(self, comm, rows)
+    }
+
+    /// Creates a [PCGSolver]; see [PCGSolver::new].
+    pub fn pcg_solver<'a>(
+        &'a self,
+        comm: &'a impl Communicator,
+        config: PCGSolverConfig,
+    ) -> HypreResult<PCGSolver<'a>> {
+        PCGSolver::new(self, comm, config)
     }
 
     fn finalize_raw() -> hypre_sys::HYPRE_Int {

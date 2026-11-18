@@ -37,7 +37,7 @@ impl<'h> CSRMatrix<'h> {
 
     pub fn new(
         _hypre: &'h Hypre<'_>,
-        comm: &impl Communicator,
+        comm: &'h impl Communicator,
         global_num_rows: usize,
         global_num_cols: usize,
         row_starts: &[usize],
@@ -145,7 +145,7 @@ impl<'h> IJMatrix<'h> {
     /// ```
     pub fn new(
         _hypre: &'h Hypre<'_>,
-        comm: &impl mpi::topology::Communicator,
+        comm: &'h impl mpi::topology::Communicator,
         rows: Range<u32>,
         cols: Range<u32>,
     ) -> HypreResult<Self> {

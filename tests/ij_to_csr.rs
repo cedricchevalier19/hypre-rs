@@ -22,7 +22,7 @@ fn ij_to_csr_conversion_outlives_ij() {
         // ParCSR object is handed over to (and later destroyed by) `matrix`.
         let mut matrix = Matrix::ParCSR(CSRMatrix::try_from(ij).unwrap());
 
-        let mut rhs = IJVector::new(&hypre, &comm, b..e).unwrap();
+        let mut rhs = hypre.ij_vector(&comm, b..e).unwrap();
         rhs.add_elements((b..e).map(|i| (i, 2.0f64))).unwrap();
         let mut x = IJVector::new(&hypre, &comm, b..e).unwrap();
         x.add_elements((b..e).map(|i| (i, 0.0f64))).unwrap();

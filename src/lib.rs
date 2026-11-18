@@ -11,9 +11,7 @@
 //! # use mpi::initialize;
 //! # use mpi::topology::Communicator;
 //! use hypre_rs::{Matrix, Vector};
-//! use hypre_rs::matrix::IJMatrix;
-//! use hypre_rs::vector::IJVector;
-//! use hypre_rs::solvers::{PCGSolverConfigBuilder, PCGSolver, Solver};
+//! use hypre_rs::solvers::{PCGSolverConfigBuilder, Solver};
 //! use hypre_rs::solvers::LinearSolver;
 //!
 //! let universe = mpi::initialize().unwrap();
@@ -25,9 +23,9 @@
 //! let (rank, size) = (mpi_comm.rank() as u32, mpi_comm.size() as u32);
 //! let rows = (rank * 12 / size)..((rank + 1) * 12 / size);
 //!
-//! let mut matrix = Matrix::IJ(IJMatrix::new(&hypre, &mpi_comm, rows.clone(), rows.clone())?);
-//! let rhs = Vector::IJ(IJVector::new(&hypre, &mpi_comm, rows.clone())?);
-//! let mut x = Vector::IJ(IJVector::new(&hypre, &mpi_comm, rows)?);
+//! let mut matrix = Matrix::IJ(hypre.ij_matrix(&mpi_comm, rows.clone(), rows.clone())?);
+//! let rhs = Vector::IJ(hypre.ij_vector(&mpi_comm, rows.clone())?);
+//! let mut x = Vector::IJ(hypre.ij_vector(&mpi_comm, rows)?);
 //!
 //! // CG solver parameters
 //! let my_parameters = PCGSolverConfigBuilder::default()
@@ -38,7 +36,7 @@
 //!             .build()?;
 //!
 //! // Create new CG solver with previous parameters
-//! let solver = Solver::CG(PCGSolver::new(&hypre, &mpi_comm, my_parameters)?);
+//! let solver = Solver::CG(hypre.pcg_solver(&mpi_comm, my_parameters)?);
 //!
 //! match solver.solve(&mut matrix, &rhs, &mut x) {
 //!     Ok(info) => println!("Solver has converged: {}", info),

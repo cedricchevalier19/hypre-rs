@@ -26,7 +26,7 @@ impl<'h> IJVector<'h> {
     /// [HypreError::InvalidRange] if `rows.start > rows.end`.
     pub fn new(
         _hypre: &'h Hypre<'_>,
-        comm: &impl mpi::topology::Communicator,
+        comm: &'h impl mpi::topology::Communicator,
         rows: Range<u32>,
     ) -> HypreResult<Self> {
         let (lower, upper) = inclusive_bounds(&rows)?;
