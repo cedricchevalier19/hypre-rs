@@ -8,31 +8,30 @@ use hypre_rs::{Matrix, Vector};
 use mpi::topology::Communicator;
 
 #[test]
-fn ij_to_csr_conversion_outlives_ij() {
+fn ij_to_csr_conversion_outlives_ij() -> Result<(), Box<dyn std::error::Error>> {
     // Keep the universe alive: dropping it calls MPI_Finalize.
-    let universe = mpi::initialize().unwrap();
+    let universe = mpi::initialize().ok_or("MPI is already initialized")?;
     let comm = universe.world();
-    let ctx = hypre_rs::initialize(&universe).unwrap();
+    let ctx = hypre_rs::initialize(&universe)?;
     {
         let (rank, size) = (comm.rank() as u32, comm.size() as u32);
         let (b, e) = (rank * 10 / size, (rank + 1) * 10 / size);
-        let mut ij = IJMatrix::new(&ctx, &comm, b..e, b..e).unwrap();
-        ij.add_elements((b..e).map(|i| (i, i, 2.0f64))).unwrap();
+        let mut ij = IJMatrix::new(&ctx, &comm, b..e, b..e)?;
+        ij.add_elements((b..e).map(|i| (i, i, 2.0f64)))?;
         // `try_from` consumes `ij`: the IJMatrix is destroyed here, while its
         // ParCSR object is handed over to (and later destroyed by) `matrix`.
-        let mut matrix = Matrix::ParCSR(CSRMatrix::try_from(ij).unwrap());
+        let mut matrix = Matrix::ParCSR(CSRMatrix::try_from(ij)?);
 
-        let mut rhs = ctx.ij_vector(&comm, b..e).unwrap();
-        rhs.add_elements((b..e).map(|i| (i, 2.0f64))).unwrap();
-        let mut x = IJVector::new(&ctx, &comm, b..e).unwrap();
-        x.add_elements((b..e).map(|i| (i, 0.0f64))).unwrap();
+        let mut rhs = ctx.ij_vector(&comm, b..e)?;
+        rhs.add_elements((b..e).map(|i| (i, 2.0f64)))?;
+        let mut x = IJVector::new(&ctx, &comm, b..e)?;
+        x.add_elements((b..e).map(|i| (i, 0.0f64)))?;
 
-        let solver = PCGSolver::new(&ctx, &comm, Default::default()).unwrap();
-        let status = solver
-            .solve(&mut matrix, &Vector::IJ(rhs), &mut Vector::IJ(x))
-            .unwrap();
+        let solver = PCGSolver::new(&ctx, &comm, Default::default())?;
+        let status = solver.solve(&mut matrix, &Vector::IJ(rhs), &mut Vector::IJ(x))?;
         assert!(status.converged);
     }
     // hypre objects must be dropped before hypre is finalized (checked by the compiler)
-    ctx.finalize().unwrap();
+    ctx.finalize()?;
+    Ok(())
 }

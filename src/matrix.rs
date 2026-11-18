@@ -125,12 +125,12 @@ impl<'h> IJMatrix<'h> {
     /// # Example
     ///
     /// ```
-    /// # fn main() -> Result<(), hypre_rs::HypreError> {
+    /// # fn main() -> Result<(), Box<dyn std::error::Error>> {
     /// # extern crate hypre_rs;
     /// # use mpi::initialize;
     /// # use mpi::topology::Communicator;
     /// use hypre_rs::matrix::IJMatrix;
-    /// # let universe = mpi::initialize().unwrap();
+    /// # let universe = mpi::initialize().ok_or("MPI is already initialized")?;
     /// # let ctx = hypre_rs::initialize(&universe)?;
     /// # let mpi_comm = universe.world();
     /// let global_size: u32 = 100;
@@ -184,12 +184,12 @@ impl<'h> IJMatrix<'h> {
     /// # Example
     ///
     /// ```
-    /// # fn main() -> Result<(), hypre_rs::HypreError> {
+    /// # fn main() -> Result<(), Box<dyn std::error::Error>> {
     /// # extern crate hypre_rs;
     /// # use mpi::initialize;
     /// # use mpi::topology::Communicator;
     /// use hypre_rs::matrix::IJMatrix;
-    /// # let universe = mpi::initialize().unwrap();
+    /// # let universe = mpi::initialize().ok_or("MPI is already initialized")?;
     /// # let ctx = hypre_rs::initialize(&universe)?;
     /// # let mpi_comm = universe.world();
     /// # let global_size: u32 = 100;
@@ -197,9 +197,10 @@ impl<'h> IJMatrix<'h> {
     /// # let local_begin = rank * global_size / size;
     /// # let local_end = (rank + 1) * global_size / size;
     /// let mut ij_matrix = IJMatrix::new(&ctx, &mpi_comm, local_begin..local_end, local_begin..local_end)?;
-    /// ij_matrix.add_elements::<u32, f64>((local_begin..local_end).map(|id| (id, id, 1.0f64)));
+    /// ij_matrix.add_elements::<u32, f64>((local_begin..local_end).map(|id| (id, id, 1.0f64)))?;
     /// # drop(ij_matrix);
-    /// # ctx.finalize()
+    /// # ctx.finalize()?;
+    /// # Ok(())
     /// # }
     /// ```
     pub fn add_elements<Id, V>(&mut self, nnz: impl Iterator<Item = (Id, Id, V)>) -> HypreResult<()>

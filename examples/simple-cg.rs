@@ -3,11 +3,11 @@ use hypre_rs::solvers::{LinearSolver, PCGSolverConfigBuilder, Solver};
 use hypre_rs::{Matrix, Vector};
 use mpi::topology::Communicator;
 
-fn main() {
-    let universe = mpi::initialize().unwrap();
+fn main() -> Result<(), Box<dyn std::error::Error>> {
+    let universe = mpi::initialize().ok_or("MPI is already initialized")?;
     let mpi_comm = universe.world();
 
-    let ctx = hypre_rs::initialize(&universe).unwrap();
+    let ctx = hypre_rs::initialize(&universe)?;
 
     // Define matrix sizes
     let mesh_size: u32 = 10;
@@ -15,14 +15,12 @@ fn main() {
     // Split rows evenly; the first ranks get one extra row when the size
     // does not divide evenly.
     let (rank, size) = (mpi_comm.rank() as u64, mpi_comm.size() as u64);
-    let local_begin: u32 = (rank * global_size as u64 / size).try_into().unwrap();
-    let local_end: u32 = ((rank + 1) * global_size as u64 / size).try_into().unwrap();
+    let local_begin: u32 = (rank * global_size as u64 / size).try_into()?;
+    let local_end: u32 = ((rank + 1) * global_size as u64 / size).try_into()?;
     let local_rows = local_begin..local_end;
 
     // Create a new matrix
-    let mut ij_matrix = ctx
-        .ij_matrix(&mpi_comm, local_rows.clone(), local_rows.clone())
-        .unwrap();
+    let mut ij_matrix = ctx.ij_matrix(&mpi_comm, local_rows.clone(), local_rows.clone())?;
 
     // Fill the matrix
     let mut nnz_buffer = Vec::<(u32, u32, f64)>::with_capacity(5);
@@ -40,20 +38,16 @@ fn main() {
         if row + mesh_size < global_size {
             nnz_buffer.push((row, row + mesh_size, -1.0));
         }
-        ij_matrix
-            .add_elements(&mut nnz_buffer.iter().map(|x| *x))
-            .unwrap();
+        ij_matrix.add_elements(&mut nnz_buffer.iter().map(|x| *x))?;
         // Allow nnz_buffer to not disappear
         nnz_buffer.clear();
     }
 
-    let mut rhs = ctx.ij_vector(&mpi_comm, local_rows.clone()).unwrap();
-    rhs.add_elements((local_begin..local_end).map(|i| (i, i as f64)))
-        .unwrap();
+    let mut rhs = ctx.ij_vector(&mpi_comm, local_rows.clone())?;
+    rhs.add_elements((local_begin..local_end).map(|i| (i, i as f64)))?;
 
-    let mut x = ctx.ij_vector(&mpi_comm, local_rows.clone()).unwrap();
-    x.add_elements((local_begin..local_end).map(|i| (i, 0f64)))
-        .unwrap();
+    let mut x = ctx.ij_vector(&mpi_comm, local_rows.clone())?;
+    x.add_elements((local_begin..local_end).map(|i| (i, 0f64)))?;
 
     // CG solver parameters
     let my_parameters = PCGSolverConfigBuilder::default()
@@ -61,21 +55,19 @@ fn main() {
         .max_iters(500usize)
         .two_norm(true)
         .recompute_residual_period(8usize)
-        .build()
-        .unwrap();
+        .build()?;
 
     // Create new CG solver with previous parameters
-    let solver = Solver::CG(ctx.pcg_solver(&mpi_comm, my_parameters).unwrap());
+    let solver = Solver::CG(ctx.pcg_solver(&mpi_comm, my_parameters)?);
 
     let mut c_matrix = Matrix::IJ(ij_matrix);
     let c_rhs = Vector::IJ(rhs);
     let mut c_x = Vector::IJ(x);
-    match solver.solve(&mut c_matrix, &c_rhs, &mut c_x) {
-        Ok(info) => println!("Solver has converged: {}", info),
-        Err(e) => panic!("Solver failed: {:?}", e),
-    }
+    let info = solver.solve(&mut c_matrix, &c_rhs, &mut c_x)?;
+    println!("Solver has converged: {}", info);
 
     // hypre objects must be dropped before hypre is finalized (checked by the compiler)
     drop((solver, c_matrix, c_rhs, c_x));
-    ctx.finalize().unwrap()
+    ctx.finalize()?;
+    Ok(())
 }

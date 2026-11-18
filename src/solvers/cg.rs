@@ -81,13 +81,16 @@ impl PCGSolverConfigBuilder {
 /// ```
 /// use hypre_rs::solvers::PCGSolver;
 ///
-/// # let universe = mpi::initialize().unwrap();
+/// # fn main() -> Result<(), Box<dyn std::error::Error>> {
+/// # let universe = mpi::initialize().ok_or("MPI is already initialized")?;
 /// # let mpi_comm = universe.world();
-/// # let ctx = hypre_rs::initialize(&universe).unwrap();
+/// # let ctx = hypre_rs::initialize(&universe)?;
 /// // Create PCGSolver with hypre's default configuration.
-/// let solver = PCGSolver::new(&ctx, &mpi_comm, Default::default()).unwrap();
+/// let solver = PCGSolver::new(&ctx, &mpi_comm, Default::default())?;
 /// # drop(solver);
-/// # ctx.finalize().unwrap();
+/// # ctx.finalize()?;
+/// # Ok(())
+/// # }
 /// ```
 impl<'h> PCGSolver<'h> {
     /// Creates a new PCGSolver according to the given configuration
@@ -223,11 +226,11 @@ impl_hypre_drop!(PCGSolver<'_>, internal_solver, HYPRE_ParCSRPCGDestroy);
 mod tests {
     use super::*;
     #[test]
-    fn config_test() {
+    fn config_test() -> Result<(), Box<dyn std::error::Error>> {
         // Keep the universe alive: dropping it calls MPI_Finalize.
-        let universe = mpi::initialize().unwrap();
+        let universe = mpi::initialize().ok_or("MPI is already initialized")?;
         let mpi_comm = universe.world();
-        let ctx = crate::initialize(&universe).unwrap();
+        let ctx = crate::initialize(&universe)?;
         // Only one hypre context may be alive.
         assert!(matches!(
             crate::initialize(&universe),
@@ -236,7 +239,7 @@ mod tests {
 
         // Solvers must be destroyed before hypre is finalized.
         {
-            let solver = PCGSolver::new(&ctx, &mpi_comm, Default::default()).unwrap();
+            let solver = PCGSolver::new(&ctx, &mpi_comm, Default::default())?;
 
             let parameters = solver.current_config();
             println!("{:?}", parameters);
@@ -246,15 +249,15 @@ mod tests {
                 .max_iters(500usize)
                 .two_norm(true)
                 .recompute_residual_period(8usize)
-                .build()
-                .unwrap();
-            let solver = PCGSolver::new(&ctx, &mpi_comm, my_parameters.clone()).unwrap();
-            let parameters = solver.current_config().unwrap();
+                .build()?;
+            let solver = PCGSolver::new(&ctx, &mpi_comm, my_parameters.clone())?;
+            let parameters = solver.current_config()?;
             println!("{:?}", parameters);
             assert_eq!(my_parameters.tol, parameters.tol);
             assert_eq!(my_parameters.max_iters, parameters.max_iters);
             assert_eq!(my_parameters.two_norm, parameters.two_norm);
         }
-        ctx.finalize().unwrap();
+        ctx.finalize()?;
+        Ok(())
     }
 }

@@ -58,13 +58,14 @@ mod tests {
     use super::*;
 
     #[test]
-    fn inclusive_bounds_conversion() {
-        assert_eq!(inclusive_bounds(&(0..10)).unwrap(), (0, 9));
-        assert_eq!(inclusive_bounds(&(5..6)).unwrap(), (5, 5));
-        assert_eq!(inclusive_bounds(&(0..0)).unwrap(), (0, -1));
+    fn inclusive_bounds_conversion() -> HypreResult<()> {
+        assert_eq!(inclusive_bounds(&(0..10))?, (0, 9));
+        assert_eq!(inclusive_bounds(&(5..6))?, (5, 5));
+        assert_eq!(inclusive_bounds(&(0..0))?, (0, -1));
         assert!(matches!(
             inclusive_bounds(&Range { start: 5, end: 3 }),
             Err(HypreError::InvalidRange)
         ));
+        Ok(())
     }
 }

@@ -6,7 +6,7 @@
 //!
 //! Here is a small example of a call to hypre's CG solver.
 //! ```
-//! # fn main() -> Result<(), hypre_rs::HypreError> {
+//! # fn main() -> Result<(), Box<dyn std::error::Error>> {
 //! extern crate hypre_rs;
 //! # use mpi::initialize;
 //! # use mpi::topology::Communicator;
@@ -14,7 +14,7 @@
 //! use hypre_rs::solvers::{PCGSolverConfigBuilder, Solver};
 //! use hypre_rs::solvers::LinearSolver;
 //!
-//! let universe = mpi::initialize().unwrap();
+//! let universe = mpi::initialize().ok_or("MPI is already initialized")?;
 //! let mpi_comm = universe.world();
 //!
 //! let ctx = hypre_rs::initialize(&universe)?;
@@ -38,10 +38,8 @@
 //! // Create new CG solver with previous parameters
 //! let solver = Solver::CG(ctx.pcg_solver(&mpi_comm, my_parameters)?);
 //!
-//! match solver.solve(&mut matrix, &rhs, &mut x) {
-//!     Ok(info) => println!("Solver has converged: {}", info),
-//!     Err(e) => return Err(e),
-//! }
+//! let info = solver.solve(&mut matrix, &rhs, &mut x)?;
+//! println!("Solver has converged: {}", info);
 //!
 //! // hypre objects must be dropped before hypre is finalized (checked by the compiler)
 //! drop((solver, matrix, rhs, x));

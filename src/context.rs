@@ -39,7 +39,7 @@ static INITIALIZED: AtomicBool = AtomicBool::new(false);
 /// # use mpi::topology::Communicator;
 /// use hypre_rs::matrix::IJMatrix;
 ///
-/// let universe = mpi::initialize().unwrap();
+/// let universe = mpi::initialize().ok_or("MPI is already initialized")?;
 /// let comm = universe.world();
 /// let ctx = hypre_rs::initialize(&universe)?;
 /// let (rank, size) = (comm.rank() as u32, comm.size() as u32);
@@ -50,7 +50,7 @@ static INITIALIZED: AtomicBool = AtomicBool::new(false);
 /// let other = IJMatrix::new(&ctx, &comm, rows.clone(), rows)?;
 /// drop((matrix, other));
 /// ctx.finalize()?;
-/// # Ok::<(), hypre_rs::HypreError>(())
+/// # Ok::<(), Box<dyn std::error::Error>>(())
 /// ```
 ///
 /// Finalizing hypre while an object still uses it does not compile:
@@ -58,36 +58,36 @@ static INITIALIZED: AtomicBool = AtomicBool::new(false);
 /// ```compile_fail,E0505
 /// # use mpi::topology::Communicator;
 /// # use hypre_rs::matrix::IJMatrix;
-/// let universe = mpi::initialize().unwrap();
+/// let universe = mpi::initialize().ok_or("MPI is already initialized")?;
 /// let comm = universe.world();
 /// let ctx = hypre_rs::initialize(&universe)?;
 /// let matrix = IJMatrix::new(&ctx, &comm, 0..0, 0..0)?;
 /// ctx.finalize()?; // error: `ctx` is still borrowed by `matrix`
 /// drop(matrix);
-/// # Ok::<(), hypre_rs::HypreError>(())
+/// # Ok::<(), Box<dyn std::error::Error>>(())
 /// ```
 ///
 /// Nor does freeing a communicator still used by a hypre object:
 ///
 /// ```compile_fail,E0505
 /// # use mpi::topology::Communicator;
-/// let universe = mpi::initialize().unwrap();
+/// let universe = mpi::initialize().ok_or("MPI is already initialized")?;
 /// let ctx = hypre_rs::initialize(&universe)?;
 /// let comm = universe.world().duplicate();
 /// let vector = ctx.ij_vector(&comm, 0..0)?;
 /// drop(comm); // error: `comm` is still borrowed by `vector`
 /// drop(vector);
-/// # Ok::<(), hypre_rs::HypreError>(())
+/// # Ok::<(), Box<dyn std::error::Error>>(())
 /// ```
 ///
 /// Nor does finalizing MPI while hypre is initialized:
 ///
 /// ```compile_fail,E0505
-/// let universe = mpi::initialize().unwrap();
+/// let universe = mpi::initialize().ok_or("MPI is already initialized")?;
 /// let ctx = hypre_rs::initialize(&universe)?;
 /// drop(universe); // error: `universe` is still borrowed by `ctx`
 /// ctx.finalize()?;
-/// # Ok::<(), hypre_rs::HypreError>(())
+/// # Ok::<(), Box<dyn std::error::Error>>(())
 /// ```
 #[derive(Debug)]
 pub struct HypreContext<'u> {
