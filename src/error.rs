@@ -31,6 +31,8 @@ pub enum HypreError {
         "Entry above the diagonal: symmetric matrices take lower-triangle entries (col <= row)"
     )]
     NotLowerTriangular,
+    #[error("Matrix is not symmetric")]
+    NotSymmetric,
     #[error("Operation requires a matrix in IJ format")]
     NotIJMatrix,
     #[error(transparent)]
