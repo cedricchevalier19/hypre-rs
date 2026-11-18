@@ -68,6 +68,7 @@ mod tests {
 
     #[test]
     fn error_create() {
+        let _lock = crate::utils::hypre_error_lock();
         match HypreError::new(hypre_sys::HYPRE_ERROR_MEMORY as HYPRE_Int) {
             HypreMemoryError => {}
             _ => panic!("Incorrect error"),
@@ -88,5 +89,45 @@ mod tests {
             UnknowError => {}
             _ => panic!("Incorrect error"),
         }
+        // A combination of error bits is not one of the known codes.
+        let both = (hypre_sys::HYPRE_ERROR_MEMORY | hypre_sys::HYPRE_ERROR_CONV) as HYPRE_Int;
+        assert!(matches!(HypreError::new(both), UnknowError));
+    }
+
+    /// Building the error from a code clears that code from hypre's global
+    /// error flag, so it does not leak into the next hypre call.
+    #[test]
+    fn error_new_clears_hypre_error_flag() {
+        let _lock = crate::utils::hypre_error_lock();
+        // Destroying a null handle is a hypre error that sets the flag.
+        let code = unsafe { hypre_sys::HYPRE_IJMatrixDestroy(std::ptr::null_mut()) };
+        assert_ne!(code, 0);
+        assert_eq!(unsafe { hypre_sys::HYPRE_GetError() }, code);
+        let _ = HypreError::new(code);
+        assert_eq!(unsafe { hypre_sys::HYPRE_GetError() }, 0);
+    }
+
+    #[test]
+    fn error_messages() {
+        assert_eq!(
+            HypreArgError(3).to_string(),
+            "Hypre internal HYPRE_ERROR_ARG on argument 3"
+        );
+        assert_eq!(
+            HypreError::InvalidRange.to_string(),
+            "Invalid range: start is greater than end"
+        );
+        // Conversion errors keep the message of the original error.
+        let Err(conversion) = u8::try_from(256u32) else {
+            panic!("256 fits in a u8");
+        };
+        assert_eq!(
+            HypreError::from(conversion).to_string(),
+            conversion.to_string()
+        );
+        assert!(matches!(
+            HypreError::from(conversion),
+            HypreError::ConversionError(_)
+        ));
     }
 }
