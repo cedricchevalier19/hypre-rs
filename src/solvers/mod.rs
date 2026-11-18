@@ -2,6 +2,9 @@ use enum_dispatch::enum_dispatch;
 
 #[macro_use]
 mod macros;
+#[macro_use]
+mod solver_macro;
+mod amg;
 mod krylov;
 #[cfg(test)]
 mod tests;
@@ -11,6 +14,7 @@ use std::fmt::Formatter;
 
 use crate::matrix::{Matrix, SymmetricMatrix};
 use crate::{HypreResult, Vector};
+pub use amg::{AMGSolver, AMGSolverConfig, AMGSolverConfigBuilder};
 pub use krylov::{
     BiCGSTABSolver, BiCGSTABSolverConfig, BiCGSTABSolverConfigBuilder, COGMRESSolver,
     COGMRESSolverConfig, COGMRESSolverConfigBuilder, FlexGMRESSolver, FlexGMRESSolverConfig,
@@ -120,6 +124,8 @@ pub enum Solver<'h> {
     COGMRES(COGMRESSolver<'h>),
     /// Biconjugate Gradient Stabilized.
     BiCGSTAB(BiCGSTABSolver<'h>),
+    /// Algebraic multigrid (BoomerAMG).
+    AMG(AMGSolver<'h>),
 }
 
 /// Solver for linear systems whose matrix is symmetric.

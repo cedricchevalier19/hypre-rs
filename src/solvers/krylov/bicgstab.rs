@@ -10,7 +10,7 @@ use crate::solvers::{IterativeSolverStatus, LinearSolver};
 use crate::{HypreContext, HypreResult, Vector};
 use hypre_sys::*;
 
-krylov_solver! {
+hypre_solver! {
     /// BiCGSTAB (Biconjugate Gradient Stabilized) solver, for general
     /// matrices: low memory use, no restart, but a less smooth convergence
     /// than GMRES.

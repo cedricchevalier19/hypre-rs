@@ -10,7 +10,7 @@ use crate::solvers::{IterativeSolverStatus, SymmetricLinearSolver};
 use crate::{HypreContext, HypreResult, Vector};
 use hypre_sys::*;
 
-krylov_solver! {
+hypre_solver! {
     /// Preconditioned Conjugate Gradient solver.
     ///
     /// CG requires a symmetric positive definite matrix, so it solves systems
