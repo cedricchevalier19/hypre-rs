@@ -89,6 +89,12 @@ fn symmetry_check() -> Result<(), Box<dyn std::error::Error>> {
             Err(HypreError::NotSymmetric)
         ));
 
+        // The unchecked conversion accepts it anyway, and gives it back.
+        let m = laplacian(&ctx, &comm, rows.clone(), &[(N - 1, 0, 1.0)])?;
+        let mut m = Matrix::from(SymmetricMatrix::from_matrix_unchecked(m));
+        assert!(!m.is_symmetric(0.0)?);
+        drop(m);
+
         // Both entries, but slightly different values: tolerance matters.
         let pair = [(N - 1, 0, 1.0), (0, N - 1, 1.0 + 1e-10)];
         let mut m = laplacian(&ctx, &comm, rows.clone(), &pair)?;

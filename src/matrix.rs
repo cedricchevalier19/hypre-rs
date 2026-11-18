@@ -617,6 +617,45 @@ impl<'h> SymmetricMatrix<'h> {
             Err(HypreError::NotSymmetric)
         }
     }
+
+    /// Converts `matrix` without checking that it is symmetric.
+    ///
+    /// Use it when the matrix is known to be symmetric and the check of
+    /// [SymmetricMatrix::try_from] (collective, about the cost of a
+    /// transposition) is not worth it. It neither communicates nor assembles
+    /// the matrix.
+    ///
+    /// This is not `unsafe`: an asymmetric matrix cannot cause undefined
+    /// behavior. But solvers then work on a matrix that breaks their
+    /// assumptions: CG, for example, may not converge, or converge to a wrong
+    /// solution without reporting an error.
+    ///
+    /// [SymmetricMatrix::add_elements] keeps adding mirrored entries, so it
+    /// keeps the matrix as symmetric as it was.
+    ///
+    /// # Example
+    ///
+    /// ```
+    /// # fn main() -> Result<(), Box<dyn std::error::Error>> {
+    /// # use mpi::topology::Communicator;
+    /// use hypre_rs::{Matrix, SymmetricMatrix};
+    /// # let universe = mpi::initialize().ok_or("MPI was already initialized (or finalized) in this process")?;
+    /// # let comm = universe.world();
+    /// # let ctx = hypre_rs::initialize(&universe)?;
+    /// # let (rank, size) = (comm.rank() as u32, comm.size() as u32);
+    /// let rows = (rank * 10 / size)..((rank + 1) * 10 / size);
+    /// // Diagonal, so symmetric: no need to check it.
+    /// let mut ij = ctx.ij_matrix(&comm, rows.clone(), rows.clone())?;
+    /// ij.add_elements(rows.map(|i| (i, i, 2.0)))?;
+    /// let diagonal = SymmetricMatrix::from_matrix_unchecked(Matrix::IJ(ij));
+    /// # drop(diagonal);
+    /// # ctx.finalize()?;
+    /// # Ok(())
+    /// # }
+    /// ```
+    pub fn from_matrix_unchecked(matrix: Matrix<'h>) -> Self {
+        Self { matrix }
+    }
 }
 
 /// Checks that the matrix is exactly symmetric, at runtime.
