@@ -11,23 +11,21 @@
 //! # use mpi::initialize;
 //! # use mpi::topology::Communicator;
 //! use hypre_rs::{Matrix, Vector};
-//! use hypre_rs::matrix::IJMatrix;
-//! use hypre_rs::vector::IJVector;
-//! use hypre_rs::solvers::{PCGSolverConfigBuilder, PCGSolver, Solver};
+//! use hypre_rs::solvers::{PCGSolverConfigBuilder, Solver};
 //! use hypre_rs::solvers::LinearSolver;
 //!
 //! let universe = mpi::initialize().unwrap();
 //! let mpi_comm = universe.world();
 //!
-//! hypre_rs::initialize()?;
+//! let ctx = hypre_rs::initialize(&universe)?;
 //!
 //! // Split the 12 rows between the MPI ranks
 //! let (rank, size) = (mpi_comm.rank() as u32, mpi_comm.size() as u32);
 //! let rows = (rank * 12 / size)..((rank + 1) * 12 / size);
 //!
-//! let mut matrix = Matrix::IJ(IJMatrix::new(&mpi_comm, rows.clone(), rows.clone())?);
-//! let rhs = Vector::IJ(IJVector::new(&mpi_comm, rows.clone())?);
-//! let mut x = Vector::IJ(IJVector::new(&mpi_comm, rows)?);
+//! let mut matrix = Matrix::IJ(ctx.ij_matrix(&mpi_comm, rows.clone(), rows.clone())?);
+//! let rhs = Vector::IJ(ctx.ij_vector(&mpi_comm, rows.clone())?);
+//! let mut x = Vector::IJ(ctx.ij_vector(&mpi_comm, rows)?);
 //!
 //! // CG solver parameters
 //! let my_parameters = PCGSolverConfigBuilder::default()
@@ -38,16 +36,16 @@
 //!             .build()?;
 //!
 //! // Create new CG solver with previous parameters
-//! let solver = Solver::CG(PCGSolver::new(&mpi_comm, my_parameters)?);
+//! let solver = Solver::CG(ctx.pcg_solver(&mpi_comm, my_parameters)?);
 //!
 //! match solver.solve(&mut matrix, &rhs, &mut x) {
 //!     Ok(info) => println!("Solver has converged: {}", info),
 //!     Err(e) => return Err(e),
 //! }
 //!
-//! // hypre objects must be dropped before hypre is finalized
+//! // hypre objects must be dropped before hypre is finalized (checked by the compiler)
 //! drop((solver, matrix, rhs, x));
-//! hypre_rs::finalize()?;
+//! ctx.finalize()?;
 //! # Ok(())
 //! # }
 //! ```
@@ -72,5 +70,5 @@ pub use error::HypreError;
 pub use matrix::Matrix;
 pub use vector::Vector;
 
-pub use utils::finalize;
-pub use utils::initialize;
+mod context;
+pub use context::{initialize, HypreContext};

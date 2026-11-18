@@ -6,14 +6,16 @@ use crate::error::HypreError;
 use crate::solvers::{IterativeSolverStatus, LinearSolver};
 
 use crate::matrix::Matrix;
-use crate::{HypreResult, Vector};
+use crate::{HypreContext, HypreResult, Vector};
 use hypre_sys::*;
 use mpi;
+use std::marker::PhantomData;
 
 /// Access to hypre Conjugate Gradient solver
 #[derive(Debug)]
-pub struct PCGSolver {
+pub struct PCGSolver<'h> {
     internal_solver: HYPRE_Solver,
+    _hypre: PhantomData<&'h ()>,
 }
 
 /// Conjugate Gradient Solver Configuration
@@ -81,20 +83,22 @@ impl PCGSolverConfigBuilder {
 ///
 /// # let universe = mpi::initialize().unwrap();
 /// # let mpi_comm = universe.world();
-/// # hypre_rs::initialize().unwrap();
+/// # let ctx = hypre_rs::initialize(&universe).unwrap();
 /// // Create PCGSolver with hypre's default configuration.
-/// let solver = PCGSolver::new(&mpi_comm, Default::default()).unwrap();
+/// let solver = PCGSolver::new(&ctx, &mpi_comm, Default::default()).unwrap();
 /// # drop(solver);
-/// # hypre_rs::finalize().unwrap();
+/// # ctx.finalize().unwrap();
 /// ```
-impl PCGSolver {
+impl<'h> PCGSolver<'h> {
     /// Creates a new PCGSolver according to the given configuration
     pub fn new(
-        comm: &impl mpi::topology::Communicator,
+        _hypre: &'h HypreContext<'_>,
+        comm: &'h impl mpi::topology::Communicator,
         config: PCGSolverConfig,
     ) -> HypreResult<Self> {
         let mut solver = PCGSolver {
             internal_solver: null_mut(),
+            _hypre: PhantomData,
         };
         unsafe {
             check_hypre!(HYPRE_ParCSRPCGCreate(
@@ -167,13 +171,13 @@ impl PCGSolver {
     }
 }
 
-impl LinearSolver for PCGSolver {
+impl LinearSolver for PCGSolver<'_> {
     /// Solves a linear system using Preconditioned Conjugate Gradient algorithm.
     fn solve(
         &self,
-        mat: &mut Matrix,
-        rhs: &Vector,
-        x: &mut Vector,
+        mat: &mut Matrix<'_>,
+        rhs: &Vector<'_>,
+        x: &mut Vector<'_>,
     ) -> HypreResult<IterativeSolverStatus> {
         unsafe {
             check_hypre!(HYPRE_PCGSetup(
@@ -213,7 +217,7 @@ impl LinearSolver for PCGSolver {
     }
 }
 
-impl_hypre_drop!(PCGSolver, internal_solver, HYPRE_ParCSRPCGDestroy);
+impl_hypre_drop!(PCGSolver<'_>, internal_solver, HYPRE_ParCSRPCGDestroy);
 
 #[cfg(test)]
 mod tests {
@@ -223,11 +227,16 @@ mod tests {
         // Keep the universe alive: dropping it calls MPI_Finalize.
         let universe = mpi::initialize().unwrap();
         let mpi_comm = universe.world();
-        crate::initialize().unwrap();
+        let ctx = crate::initialize(&universe).unwrap();
+        // Only one hypre context may be alive.
+        assert!(matches!(
+            crate::initialize(&universe),
+            Err(HypreError::AlreadyInitialized)
+        ));
 
         // Solvers must be destroyed before hypre is finalized.
         {
-            let solver = PCGSolver::new(&mpi_comm, Default::default()).unwrap();
+            let solver = PCGSolver::new(&ctx, &mpi_comm, Default::default()).unwrap();
 
             let parameters = solver.current_config();
             println!("{:?}", parameters);
@@ -239,13 +248,13 @@ mod tests {
                 .recompute_residual_period(8usize)
                 .build()
                 .unwrap();
-            let solver = PCGSolver::new(&mpi_comm, my_parameters.clone()).unwrap();
+            let solver = PCGSolver::new(&ctx, &mpi_comm, my_parameters.clone()).unwrap();
             let parameters = solver.current_config().unwrap();
             println!("{:?}", parameters);
             assert_eq!(my_parameters.tol, parameters.tol);
             assert_eq!(my_parameters.max_iters, parameters.max_iters);
             assert_eq!(my_parameters.two_norm, parameters.two_norm);
         }
-        crate::finalize().unwrap();
+        ctx.finalize().unwrap();
     }
 }

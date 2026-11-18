@@ -25,6 +25,8 @@ pub enum HypreError {
     InvalidParameterPositive,
     #[error("Invalid range: start is greater than end")]
     InvalidRange,
+    #[error("hypre is already initialized")]
+    AlreadyInitialized,
     #[error(transparent)]
     ConversionError(#[from] TryFromIntError),
     #[error(transparent)]

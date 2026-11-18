@@ -40,22 +40,6 @@ pub(crate) fn discard_error(code: hypre_sys::HYPRE_Int) {
     }
 }
 
-pub fn initialize() -> HypreResult<()> {
-    use hypre_sys::HYPRE_Initialize;
-    unsafe {
-        check_hypre!(HYPRE_Initialize());
-    }
-    Ok(())
-}
-
-pub fn finalize() -> HypreResult<()> {
-    use hypre_sys::HYPRE_Finalize;
-    unsafe {
-        check_hypre!(HYPRE_Finalize());
-    }
-    Ok(())
-}
-
 /// Converts a half-open Rust range into hypre's inclusive `(lower, upper)` bounds.
 ///
 /// An empty range `n..n` becomes `(n, n - 1)`, which hypre accepts for an

@@ -1,7 +1,7 @@
 use crate::error::HypreError;
 use crate::matrix::Matrix::{ParCSR, IJ};
 use crate::utils::inclusive_bounds;
-use crate::HypreResult;
+use crate::{HypreContext, HypreResult};
 use hypre_sys::{
     HYPRE_BigInt, HYPRE_Complex, HYPRE_IJMatrix, HYPRE_IJMatrixAddToValues, HYPRE_IJMatrixAssemble,
     HYPRE_IJMatrixCreate, HYPRE_IJMatrixDestroy, HYPRE_IJMatrixGetObject, HYPRE_IJMatrixInitialize,
@@ -9,6 +9,7 @@ use hypre_sys::{
     HYPRE_ParCSRMatrixCreate, HYPRE_ParCSRMatrixDestroy, HYPRE_PARCSR,
 };
 use mpi::topology::Communicator;
+use std::marker::PhantomData;
 use std::num::TryFromIntError;
 use std::ops::Range;
 use std::{ffi::c_void, ptr::null_mut};
@@ -19,11 +20,12 @@ use itertools::Itertools;
 ///
 /// Not `Clone`: copying the handle would destroy it twice.
 #[derive(Debug)]
-pub struct CSRMatrix {
+pub struct CSRMatrix<'h> {
     internal_matrix: HYPRE_ParCSRMatrix,
+    _hypre: PhantomData<&'h ()>,
 }
 
-impl CSRMatrix {
+impl<'h> CSRMatrix<'h> {
     fn translate_into_hypre_bigints(
         values: &[usize],
     ) -> Result<Vec<HYPRE_BigInt>, TryFromIntError> {
@@ -34,7 +36,8 @@ impl CSRMatrix {
     }
 
     pub fn new(
-        comm: &impl Communicator,
+        _hypre: &'h HypreContext<'_>,
+        comm: &'h impl Communicator,
         global_num_rows: usize,
         global_num_cols: usize,
         row_starts: &[usize],
@@ -42,6 +45,7 @@ impl CSRMatrix {
     ) -> HypreResult<Self> {
         let mut out = CSRMatrix {
             internal_matrix: null_mut(),
+            _hypre: PhantomData,
         };
         let mut h_row_starts = Self::translate_into_hypre_bigints(row_starts)?;
         let mut h_col_starts = Self::translate_into_hypre_bigints(col_starts)?;
@@ -66,21 +70,22 @@ impl CSRMatrix {
     }
 }
 
-impl_hypre_drop!(CSRMatrix, internal_matrix, HYPRE_ParCSRMatrixDestroy);
+impl_hypre_drop!(CSRMatrix<'_>, internal_matrix, HYPRE_ParCSRMatrixDestroy);
 
 #[derive(Debug)]
-pub struct IJMatrix {
+pub struct IJMatrix<'h> {
     internal_matrix: HYPRE_IJMatrix,
+    _hypre: PhantomData<&'h ()>,
 }
 
 /// Converts from a [IJMatrix]
 ///
 /// Calls hypre to assemble the matrix in CSR format.
 /// Conversion can fail in hypre.
-impl TryFrom<IJMatrix> for CSRMatrix {
+impl<'h> TryFrom<IJMatrix<'h>> for CSRMatrix<'h> {
     type Error = HypreError;
 
-    fn try_from(ij: IJMatrix) -> Result<Self, Self::Error> {
+    fn try_from(ij: IJMatrix<'h>) -> Result<Self, Self::Error> {
         let mut parcsr: *mut c_void = null_mut();
         unsafe {
             check_hypre!(HYPRE_IJMatrixAssemble(ij.internal_matrix));
@@ -92,11 +97,12 @@ impl TryFrom<IJMatrix> for CSRMatrix {
         }
         Ok(CSRMatrix {
             internal_matrix: parcsr as HYPRE_ParCSRMatrix,
+            _hypre: PhantomData,
         })
     }
 }
 
-impl IJMatrix {
+impl<'h> IJMatrix<'h> {
     /// Creates an IJMatrix from a communicator [Communicator] and sizes
     ///
     /// # Arguments
@@ -125,20 +131,21 @@ impl IJMatrix {
     /// # use mpi::topology::Communicator;
     /// use hypre_rs::matrix::IJMatrix;
     /// # let universe = mpi::initialize().unwrap();
-    /// # hypre_rs::initialize()?;
+    /// # let ctx = hypre_rs::initialize(&universe)?;
     /// # let mpi_comm = universe.world();
     /// let global_size: u32 = 100;
     /// let (rank, size) = (mpi_comm.rank() as u32, mpi_comm.size() as u32);
     /// let begin = rank * global_size / size;
     /// let end = (rank + 1) * global_size / size;
-    /// let ij_matrix = IJMatrix::new(&mpi_comm, begin..end, begin..end)?;
+    /// let ij_matrix = IJMatrix::new(&ctx, &mpi_comm, begin..end, begin..end)?;
     /// # drop(ij_matrix);
-    /// # hypre_rs::finalize()?;
+    /// # ctx.finalize()?;
     /// # Ok(())
     /// # }
     /// ```
     pub fn new(
-        comm: &impl mpi::topology::Communicator,
+        _hypre: &'h HypreContext<'_>,
+        comm: &'h impl mpi::topology::Communicator,
         rows: Range<u32>,
         cols: Range<u32>,
     ) -> HypreResult<Self> {
@@ -146,6 +153,7 @@ impl IJMatrix {
         let (col_lower, col_upper) = inclusive_bounds(&cols)?;
         let mut out = Self {
             internal_matrix: null_mut(),
+            _hypre: PhantomData,
         };
         // If a call below fails, dropping `out` destroys whatever was created.
         unsafe {
@@ -182,16 +190,16 @@ impl IJMatrix {
     /// # use mpi::topology::Communicator;
     /// use hypre_rs::matrix::IJMatrix;
     /// # let universe = mpi::initialize().unwrap();
-    /// # hypre_rs::initialize()?;
+    /// # let ctx = hypre_rs::initialize(&universe)?;
     /// # let mpi_comm = universe.world();
     /// # let global_size: u32 = 100;
     /// # let (rank, size) = (mpi_comm.rank() as u32, mpi_comm.size() as u32);
     /// # let local_begin = rank * global_size / size;
     /// # let local_end = (rank + 1) * global_size / size;
-    /// let mut ij_matrix = IJMatrix::new(&mpi_comm, local_begin..local_end, local_begin..local_end)?;
+    /// let mut ij_matrix = IJMatrix::new(&ctx, &mpi_comm, local_begin..local_end, local_begin..local_end)?;
     /// ij_matrix.add_elements::<u32, f64>((local_begin..local_end).map(|id| (id, id, 1.0f64)));
     /// # drop(ij_matrix);
-    /// # hypre_rs::finalize()
+    /// # ctx.finalize()
     /// # }
     /// ```
     pub fn add_elements<Id, V>(&mut self, nnz: impl Iterator<Item = (Id, Id, V)>) -> HypreResult<()>
@@ -237,20 +245,20 @@ impl IJMatrix {
     }
 }
 
-impl_hypre_drop!(IJMatrix, internal_matrix, HYPRE_IJMatrixDestroy);
+impl_hypre_drop!(IJMatrix<'_>, internal_matrix, HYPRE_IJMatrixDestroy);
 
 /// Matrix datatype
 ///
 /// This type is generic, to handle the different hypre implementations
 #[derive(Debug)]
-pub enum Matrix {
+pub enum Matrix<'h> {
     /// IJ matrix, defined algebraically
-    IJ(IJMatrix),
+    IJ(IJMatrix<'h>),
     /// Parallel CSR matrix, behind IJ matrix
-    ParCSR(CSRMatrix),
+    ParCSR(CSRMatrix<'h>),
 }
 
-impl Matrix {
+impl Matrix<'_> {
     pub(crate) fn get_internal(&mut self) -> HypreResult<HYPRE_Matrix> {
         match self {
             IJ(m) => m.get_internal(),
@@ -269,9 +277,11 @@ mod tests {
     fn drop_null_handle() {
         drop(IJMatrix {
             internal_matrix: null_mut(),
+            _hypre: PhantomData,
         });
         drop(CSRMatrix {
             internal_matrix: null_mut(),
+            _hypre: PhantomData,
         });
         assert_eq!(unsafe { hypre_sys::HYPRE_GetError() }, 0);
     }
