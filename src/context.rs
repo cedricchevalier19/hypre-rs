@@ -1,7 +1,11 @@
 //! The [HypreContext]: hypre initialization, finalization and object creation.
 
 use crate::matrix::{CSRMatrix, IJMatrix, SymmetricMatrix};
-use crate::solvers::{PCGSolver, PCGSolverConfig};
+use crate::solvers::{
+    BiCGSTABSolver, BiCGSTABSolverConfig, COGMRESSolver, COGMRESSolverConfig, FlexGMRESSolver,
+    FlexGMRESSolverConfig, GMRESSolver, GMRESSolverConfig, LGMRESSolver, LGMRESSolverConfig,
+    PCGSolver, PCGSolverConfig,
+};
 use crate::vector::IJVector;
 use crate::{HypreError, HypreResult};
 use hypre_sys::{HYPRE_Finalize, HYPRE_Initialize};
@@ -28,7 +32,8 @@ static INITIALIZED: AtomicBool = AtomicBool::new(false);
 /// Objects are created either with the factory methods of the context
 /// ([HypreContext::ij_matrix], [HypreContext::symmetric_matrix],
 /// [HypreContext::ij_vector], [HypreContext::csr_matrix],
-/// [HypreContext::pcg_solver]) or with their `new`
+/// [HypreContext::pcg_solver], [HypreContext::gmres_solver] and the other
+/// solvers) or with their `new`
 /// constructor.
 ///
 /// Only one context can exist at a time. It is neither `Send` nor `Sync`:
@@ -184,6 +189,51 @@ impl HypreContext<'_> {
         config: PCGSolverConfig,
     ) -> HypreResult<PCGSolver<'a>> {
         PCGSolver::new(self, comm, config)
+    }
+
+    /// Creates a [GMRESSolver]; see [GMRESSolver::new].
+    pub fn gmres_solver<'a>(
+        &'a self,
+        comm: &'a impl Communicator,
+        config: GMRESSolverConfig,
+    ) -> HypreResult<GMRESSolver<'a>> {
+        GMRESSolver::new(self, comm, config)
+    }
+
+    /// Creates a [FlexGMRESSolver]; see [FlexGMRESSolver::new].
+    pub fn flex_gmres_solver<'a>(
+        &'a self,
+        comm: &'a impl Communicator,
+        config: FlexGMRESSolverConfig,
+    ) -> HypreResult<FlexGMRESSolver<'a>> {
+        FlexGMRESSolver::new(self, comm, config)
+    }
+
+    /// Creates a [LGMRESSolver]; see [LGMRESSolver::new].
+    pub fn lgmres_solver<'a>(
+        &'a self,
+        comm: &'a impl Communicator,
+        config: LGMRESSolverConfig,
+    ) -> HypreResult<LGMRESSolver<'a>> {
+        LGMRESSolver::new(self, comm, config)
+    }
+
+    /// Creates a [COGMRESSolver]; see [COGMRESSolver::new].
+    pub fn cogmres_solver<'a>(
+        &'a self,
+        comm: &'a impl Communicator,
+        config: COGMRESSolverConfig,
+    ) -> HypreResult<COGMRESSolver<'a>> {
+        COGMRESSolver::new(self, comm, config)
+    }
+
+    /// Creates a [BiCGSTABSolver]; see [BiCGSTABSolver::new].
+    pub fn bicgstab_solver<'a>(
+        &'a self,
+        comm: &'a impl Communicator,
+        config: BiCGSTABSolverConfig,
+    ) -> HypreResult<BiCGSTABSolver<'a>> {
+        BiCGSTABSolver::new(self, comm, config)
     }
 
     fn finalize_raw() -> hypre_sys::HYPRE_Int {
