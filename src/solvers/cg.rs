@@ -3,15 +3,18 @@ use derive_builder::Builder;
 use std::ptr::null_mut;
 
 use crate::error::HypreError;
-use crate::solvers::{IterativeSolverStatus, LinearSolver};
+use crate::solvers::{IterativeSolverStatus, SymmetricLinearSolver};
 
-use crate::matrix::Matrix;
+use crate::matrix::SymmetricMatrix;
 use crate::{HypreContext, HypreResult, Vector};
 use hypre_sys::*;
 use mpi;
 use std::marker::PhantomData;
 
 /// Access to hypre Conjugate Gradient solver
+///
+/// CG requires a symmetric positive definite matrix, so it solves systems
+/// with a [SymmetricMatrix] only (see [SymmetricLinearSolver]).
 #[derive(Debug)]
 pub struct PCGSolver<'h> {
     internal_solver: HYPRE_Solver,
@@ -174,11 +177,11 @@ impl<'h> PCGSolver<'h> {
     }
 }
 
-impl LinearSolver for PCGSolver<'_> {
+impl SymmetricLinearSolver for PCGSolver<'_> {
     /// Solves a linear system using Preconditioned Conjugate Gradient algorithm.
     fn solve(
         &self,
-        mat: &mut Matrix<'_>,
+        mat: &mut SymmetricMatrix<'_>,
         rhs: &Vector<'_>,
         x: &mut Vector<'_>,
     ) -> HypreResult<IterativeSolverStatus> {

@@ -10,9 +10,8 @@
 //! extern crate hypre_rs;
 //! # use mpi::initialize;
 //! # use mpi::topology::Communicator;
-//! use hypre_rs::{Matrix, Vector};
-//! use hypre_rs::solvers::{PCGSolverConfigBuilder, Solver};
-//! use hypre_rs::solvers::LinearSolver;
+//! use hypre_rs::Vector;
+//! use hypre_rs::solvers::{PCGSolverConfigBuilder, SymmetricLinearSolver, SymmetricSolver};
 //!
 //! let universe = mpi::initialize().ok_or("MPI was already initialized (or finalized) in this process")?;
 //! let mpi_comm = universe.world();
@@ -23,8 +22,15 @@
 //! let (rank, size) = (mpi_comm.rank() as u32, mpi_comm.size() as u32);
 //! let rows = (rank * 12 / size)..((rank + 1) * 12 / size);
 //!
-//! let mut matrix = Matrix::IJ(ctx.ij_matrix(&mpi_comm, rows.clone(), rows.clone())?);
-//! let rhs = Vector::IJ(ctx.ij_vector(&mpi_comm, rows.clone())?);
+//! // CG needs a symmetric matrix: give the lower triangle, the upper one
+//! // is added by symmetry. Here the 1D Laplacian tridiag(-1, 2, -1).
+//! let mut matrix = ctx.symmetric_matrix(&mpi_comm, rows.clone())?;
+//! matrix.add_elements(rows.clone().map(|i| (i, i, 2.0)))?;
+//! matrix.add_elements(rows.clone().filter(|&i| i > 0).map(|i| (i, i - 1, -1.0)))?;
+//!
+//! let mut rhs = ctx.ij_vector(&mpi_comm, rows.clone())?;
+//! rhs.add_elements(rows.clone().map(|i| (i, 1.0)))?;
+//! let rhs = Vector::IJ(rhs);
 //! let mut x = Vector::IJ(ctx.ij_vector(&mpi_comm, rows)?);
 //!
 //! // CG solver parameters
@@ -36,7 +42,7 @@
 //!             .build()?;
 //!
 //! // Create new CG solver with previous parameters
-//! let solver = Solver::CG(ctx.pcg_solver(&mpi_comm, my_parameters)?);
+//! let solver = SymmetricSolver::CG(ctx.pcg_solver(&mpi_comm, my_parameters)?);
 //!
 //! let info = solver.solve(&mut matrix, &rhs, &mut x)?;
 //! println!("Solver has converged: {}", info);
@@ -65,7 +71,7 @@ pub mod vector;
 
 type HypreResult<T> = Result<T, error::HypreError>;
 pub use error::HypreError;
-pub use matrix::Matrix;
+pub use matrix::{Matrix, SymmetricMatrix};
 pub use vector::Vector;
 
 mod context;

@@ -290,6 +290,130 @@ impl Matrix<'_> {
     }
 }
 
+/// Square matrix that is symmetric by construction.
+///
+/// hypre always stores both triangles, so entries are given for the lower
+/// triangle only (`col <= row`) and each off-diagonal entry `(i, j, v)` is also
+/// added at `(j, i)`. Solvers that need a symmetric matrix, such as
+/// [PCGSolver](crate::solvers::PCGSolver), only accept this type.
+///
+/// # Example
+///
+/// The 1D Laplacian `tridiag(-1, 2, -1)`:
+///
+/// ```
+/// # fn main() -> Result<(), Box<dyn std::error::Error>> {
+/// # use mpi::topology::Communicator;
+/// # let universe = mpi::initialize().ok_or("MPI was already initialized (or finalized) in this process")?;
+/// # let comm = universe.world();
+/// # let ctx = hypre_rs::initialize(&universe)?;
+/// # let (rank, size) = (comm.rank() as u32, comm.size() as u32);
+/// let rows = (rank * 10 / size)..((rank + 1) * 10 / size);
+/// let mut laplacian = ctx.symmetric_matrix(&comm, rows.clone())?;
+/// // Diagonal and sub-diagonal; the super-diagonal is added by symmetry.
+/// laplacian.add_elements(rows.clone().map(|i| (i, i, 2.0)))?;
+/// laplacian.add_elements(rows.filter(|&i| i > 0).map(|i| (i, i - 1, -1.0)))?;
+/// # drop(laplacian);
+/// # ctx.finalize()?;
+/// # Ok(())
+/// # }
+/// ```
+#[derive(Debug)]
+pub struct SymmetricMatrix<'h> {
+    /// Symmetric: only filled through [SymmetricMatrix::add_elements].
+    matrix: Matrix<'h>,
+}
+
+impl<'h> SymmetricMatrix<'h> {
+    /// Creates an empty symmetric matrix, stored as an [IJMatrix].
+    ///
+    /// `rows` is the half-open range of global rows owned by the current MPI
+    /// rank, as for [IJMatrix::new]; the matrix is square, so the same range
+    /// is used for the columns.
+    ///
+    /// # Errors
+    ///
+    /// [HypreError::InvalidRange] if `rows.start > rows.end`, or the error
+    /// returned by hypre.
+    pub fn new(
+        hypre: &'h HypreContext<'_>,
+        comm: &'h impl Communicator,
+        rows: Range<u32>,
+    ) -> HypreResult<Self> {
+        Ok(Self {
+            matrix: IJ(IJMatrix::new(hypre, comm, rows.clone(), rows)?),
+        })
+    }
+
+    /// Adds `(row, col, value)` entries of the lower triangle (`col <= row`).
+    ///
+    /// Each off-diagonal entry is also added at `(col, row)`, so an entry of
+    /// the upper triangle must not be given as well: it would be counted
+    /// twice. As for [IJMatrix::add_elements], values are added to existing
+    /// ones and entries may belong to other MPI ranks; the mirrored entry of
+    /// a local row often does.
+    ///
+    /// # Errors
+    ///
+    /// - [HypreError::NotLowerTriangular] if an entry has `col > row`,
+    /// - [HypreError::NotIJMatrix] after [SymmetricMatrix::into_csr],
+    /// - [HypreError::ConversionError] if an index or value does not fit
+    ///   hypre's types,
+    ///
+    /// in which cases nothing is added, or the error returned by hypre.
+    pub fn add_elements<Id, V>(&mut self, nnz: impl Iterator<Item = (Id, Id, V)>) -> HypreResult<()>
+    where
+        Id: Copy + TryInto<HYPRE_BigInt>,
+        V: Copy + TryInto<HYPRE_Complex>,
+        HypreError: From<<Id as TryInto<HYPRE_BigInt>>::Error>,
+        HypreError: From<<V as TryInto<HYPRE_Complex>>::Error>,
+    {
+        let IJ(ij) = &mut self.matrix else {
+            return Err(HypreError::NotIJMatrix);
+        };
+        let entries = convert_entries(nnz)?;
+        if entries.iter().any(|&(row, col, _)| col > row) {
+            return Err(HypreError::NotLowerTriangular);
+        }
+        let (rows, cols, values): (Vec<_>, Vec<_>, Vec<_>) = entries
+            .iter()
+            .copied()
+            .chain(
+                entries
+                    .iter()
+                    .filter(|&&(row, col, _)| row != col)
+                    .map(|&(row, col, value)| (col, row, value)),
+            )
+            .multiunzip();
+        ij.add_to_values(&rows, &cols, &values)
+    }
+
+    /// Converts the matrix to the [CSRMatrix] format; see
+    /// `TryFrom<IJMatrix> for CSRMatrix`.
+    ///
+    /// Assembles the matrix, so it is collective. The matrix cannot be
+    /// modified afterwards. Converting a matrix that is already in CSR format
+    /// does nothing.
+    pub fn into_csr(self) -> HypreResult<Self> {
+        let matrix = match self.matrix {
+            IJ(ij) => ParCSR(CSRMatrix::try_from(ij)?),
+            csr @ ParCSR(_) => csr,
+        };
+        Ok(Self { matrix })
+    }
+
+    pub(crate) fn get_internal(&mut self) -> HypreResult<HYPRE_Matrix> {
+        self.matrix.get_internal()
+    }
+}
+
+/// Forgets that the matrix is symmetric.
+impl<'h> From<SymmetricMatrix<'h>> for Matrix<'h> {
+    fn from(symmetric: SymmetricMatrix<'h>) -> Self {
+        symmetric.matrix
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;

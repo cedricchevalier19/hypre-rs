@@ -1,10 +1,10 @@
 //! Converting an IJMatrix into a CSRMatrix hands the ParCSR object over: it must
 //! stay valid once the IJMatrix is consumed, and be destroyed exactly once.
 
-use hypre_rs::matrix::{CSRMatrix, IJMatrix};
-use hypre_rs::solvers::{LinearSolver, PCGSolver};
+use hypre_rs::matrix::{CSRMatrix, IJMatrix, SymmetricMatrix};
+use hypre_rs::solvers::{PCGSolver, SymmetricLinearSolver};
 use hypre_rs::vector::IJVector;
-use hypre_rs::{Matrix, Vector};
+use hypre_rs::{HypreError, Matrix, Vector};
 use mpi::topology::Communicator;
 
 #[test]
@@ -20,8 +20,19 @@ fn ij_to_csr_conversion_outlives_ij() -> Result<(), Box<dyn std::error::Error>> 
         let mut ij = IJMatrix::new(&ctx, &comm, b..e, b..e)?;
         ij.add_elements((b..e).map(|i| (i, i, 2.0f64)))?;
         // `try_from` consumes `ij`: the IJMatrix is destroyed here, while its
-        // ParCSR object is handed over to (and later destroyed by) `matrix`.
-        let mut matrix = Matrix::ParCSR(CSRMatrix::try_from(ij)?);
+        // ParCSR object is handed over to (and later destroyed by) `csr`.
+        let csr = Matrix::ParCSR(CSRMatrix::try_from(ij)?);
+        drop(csr);
+
+        // Same through a symmetric matrix, which CG accepts.
+        let mut matrix = SymmetricMatrix::new(&ctx, &comm, b..e)?;
+        matrix.add_elements((b..e).map(|i| (i, i, 2.0f64)))?;
+        let mut matrix = matrix.into_csr()?;
+        // A CSR matrix can no longer be modified.
+        assert!(matches!(
+            matrix.add_elements((b..e).map(|i| (i, i, 1.0f64))),
+            Err(HypreError::NotIJMatrix)
+        ));
 
         let mut rhs = ctx.ij_vector(&comm, b..e)?;
         rhs.add_elements((b..e).map(|i| (i, 2.0f64)))?;

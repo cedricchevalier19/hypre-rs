@@ -1,6 +1,6 @@
 extern crate hypre_rs;
-use hypre_rs::solvers::{LinearSolver, PCGSolverConfigBuilder, Solver};
-use hypre_rs::{Matrix, Vector};
+use hypre_rs::solvers::{PCGSolverConfigBuilder, SymmetricLinearSolver, SymmetricSolver};
+use hypre_rs::Vector;
 use mpi::topology::Communicator;
 
 fn main() -> Result<(), Box<dyn std::error::Error>> {
@@ -20,11 +20,12 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     let local_end: u32 = ((rank + 1) * global_size as u64 / size).try_into()?;
     let local_rows = local_begin..local_end;
 
-    // Create a new matrix
-    let mut ij_matrix = ctx.ij_matrix(&mpi_comm, local_rows.clone(), local_rows.clone())?;
+    // Create a new symmetric matrix
+    let mut matrix = ctx.symmetric_matrix(&mpi_comm, local_rows.clone())?;
 
-    // Fill the matrix
-    let mut nnz_buffer = Vec::<(u32, u32, f64)>::with_capacity(5);
+    // Fill the lower triangle of the 2D Laplacian; the upper triangle is
+    // added by symmetry.
+    let mut nnz_buffer = Vec::<(u32, u32, f64)>::with_capacity(3);
     for row in local_begin..local_end {
         if row >= mesh_size {
             nnz_buffer.push((row, row - mesh_size, -1.0));
@@ -33,13 +34,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
             nnz_buffer.push((row, row - 1, -1.0));
         }
         nnz_buffer.push((row, row, 4.0));
-        if ((row + 1) % mesh_size) != 0 {
-            nnz_buffer.push((row, row + 1, -1.0));
-        }
-        if row + mesh_size < global_size {
-            nnz_buffer.push((row, row + mesh_size, -1.0));
-        }
-        ij_matrix.add_elements(nnz_buffer.iter().copied())?;
+        matrix.add_elements(nnz_buffer.iter().copied())?;
         // Allow nnz_buffer to not disappear
         nnz_buffer.clear();
     }
@@ -59,16 +54,15 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
         .build()?;
 
     // Create new CG solver with previous parameters
-    let solver = Solver::CG(ctx.pcg_solver(&mpi_comm, my_parameters)?);
+    let solver = SymmetricSolver::CG(ctx.pcg_solver(&mpi_comm, my_parameters)?);
 
-    let mut c_matrix = Matrix::IJ(ij_matrix);
     let c_rhs = Vector::IJ(rhs);
     let mut c_x = Vector::IJ(x);
-    let info = solver.solve(&mut c_matrix, &c_rhs, &mut c_x)?;
+    let info = solver.solve(&mut matrix, &c_rhs, &mut c_x)?;
     println!("Solver has converged: {}", info);
 
     // hypre objects must be dropped before hypre is finalized (checked by the compiler)
-    drop((solver, c_matrix, c_rhs, c_x));
+    drop((solver, matrix, c_rhs, c_x));
     ctx.finalize()?;
     Ok(())
 }

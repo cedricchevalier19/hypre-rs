@@ -27,6 +27,12 @@ pub enum HypreError {
     InvalidRange,
     #[error("hypre is already initialized")]
     AlreadyInitialized,
+    #[error(
+        "Entry above the diagonal: symmetric matrices take lower-triangle entries (col <= row)"
+    )]
+    NotLowerTriangular,
+    #[error("Operation requires a matrix in IJ format")]
+    NotIJMatrix,
     #[error(transparent)]
     ConversionError(#[from] TryFromIntError),
     #[error(transparent)]

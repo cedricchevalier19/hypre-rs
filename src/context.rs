@@ -1,6 +1,6 @@
 //! The [HypreContext]: hypre initialization, finalization and object creation.
 
-use crate::matrix::{CSRMatrix, IJMatrix};
+use crate::matrix::{CSRMatrix, IJMatrix, SymmetricMatrix};
 use crate::solvers::{PCGSolver, PCGSolverConfig};
 use crate::vector::IJVector;
 use crate::{HypreError, HypreResult};
@@ -26,8 +26,9 @@ static INITIALIZED: AtomicBool = AtomicBool::new(false);
 /// - a communicator outlives the hypre objects that use it.
 ///
 /// Objects are created either with the factory methods of the context
-/// ([HypreContext::ij_matrix], [HypreContext::ij_vector],
-/// [HypreContext::csr_matrix], [HypreContext::pcg_solver]) or with their `new`
+/// ([HypreContext::ij_matrix], [HypreContext::symmetric_matrix],
+/// [HypreContext::ij_vector], [HypreContext::csr_matrix],
+/// [HypreContext::pcg_solver]) or with their `new`
 /// constructor.
 ///
 /// Only one context can exist at a time. It is neither `Send` nor `Sync`:
@@ -137,6 +138,15 @@ impl HypreContext<'_> {
         cols: Range<u32>,
     ) -> HypreResult<IJMatrix<'a>> {
         IJMatrix::new(self, comm, rows, cols)
+    }
+
+    /// Creates a [SymmetricMatrix]; see [SymmetricMatrix::new].
+    pub fn symmetric_matrix<'a>(
+        &'a self,
+        comm: &'a impl Communicator,
+        rows: Range<u32>,
+    ) -> HypreResult<SymmetricMatrix<'a>> {
+        SymmetricMatrix::new(self, comm, rows)
     }
 
     /// Creates a [CSRMatrix]; see [CSRMatrix::new].
