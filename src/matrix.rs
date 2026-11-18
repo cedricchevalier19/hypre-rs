@@ -18,7 +18,7 @@ use mpi::Count;
 use std::collections::HashMap;
 use std::marker::PhantomData;
 use std::num::TryFromIntError;
-use std::ops::Range;
+use std::ops::{Deref, Range};
 use std::{ffi::c_void, ptr::null_mut};
 
 use itertools::Itertools;
@@ -246,7 +246,11 @@ impl<'h> IJMatrix<'h> {
         Ok(())
     }
 
-    fn get_internal(&mut self) -> HypreResult<HYPRE_Matrix> {
+    /// Assembles the matrix and returns its ParCSR object.
+    ///
+    /// Takes `&self`: assembling changes hypre's state behind the handle,
+    /// not any Rust data.
+    fn get_internal(&self) -> HypreResult<HYPRE_Matrix> {
         let mut out: HYPRE_Matrix = null_mut();
         unsafe {
             check_hypre!(HYPRE_IJMatrixAssemble(self.internal_matrix));
@@ -293,7 +297,7 @@ pub enum Matrix<'h> {
 }
 
 impl Matrix<'_> {
-    pub(crate) fn get_internal(&mut self) -> HypreResult<HYPRE_Matrix> {
+    pub(crate) fn get_internal(&self) -> HypreResult<HYPRE_Matrix> {
         match self {
             IJ(m) => m.get_internal(),
             ParCSR(m) => m.get_internal(),
@@ -329,14 +333,14 @@ impl Matrix<'_> {
     /// // Upper bidiagonal: not symmetric.
     /// ij.add_elements(rows.clone().map(|i| (i, i, 2.0)))?;
     /// ij.add_elements(rows.filter(|&i| i < 9).map(|i| (i, i + 1, -1.0)))?;
-    /// let mut matrix = Matrix::IJ(ij);
+    /// let matrix = Matrix::IJ(ij);
     /// assert!(!matrix.is_symmetric(0.0)?);
     /// # drop(matrix);
     /// # ctx.finalize()?;
     /// # Ok(())
     /// # }
     /// ```
-    pub fn is_symmetric(&mut self, tol: f64) -> HypreResult<bool> {
+    pub fn is_symmetric(&self, tol: f64) -> HypreResult<bool> {
         check_tolerance(tol)?;
         let parcsr = self.get_internal()? as HYPRE_ParCSRMatrix;
 
@@ -479,6 +483,9 @@ impl Matrix<'_> {
 /// added at `(j, i)`. Solvers that need a symmetric matrix, such as
 /// [PCGSolver](crate::solvers::PCGSolver), only accept this type.
 ///
+/// It is also a [Matrix]: it dereferences to one (see its `Deref`
+/// implementation), so it can be passed wherever a `&Matrix` is expected.
+///
 /// # Example
 ///
 /// The 1D Laplacian `tridiag(-1, 2, -1)`:
@@ -573,7 +580,7 @@ impl<'h> SymmetricMatrix<'h> {
         Ok(Self { matrix })
     }
 
-    pub(crate) fn get_internal(&mut self) -> HypreResult<HYPRE_Matrix> {
+    pub(crate) fn get_internal(&self) -> HypreResult<HYPRE_Matrix> {
         self.matrix.get_internal()
     }
 }
@@ -590,7 +597,7 @@ impl<'h> SymmetricMatrix<'h> {
     /// [HypreError::NotSymmetric] if it is not (the matrix is dropped; call
     /// [Matrix::is_symmetric] first to keep it), or the errors of
     /// [Matrix::is_symmetric].
-    pub fn try_from_with_tolerance(mut matrix: Matrix<'h>, tol: f64) -> HypreResult<Self> {
+    pub fn try_from_with_tolerance(matrix: Matrix<'h>, tol: f64) -> HypreResult<Self> {
         if matrix.is_symmetric(tol)? {
             Ok(Self { matrix })
         } else {
@@ -677,6 +684,46 @@ impl<'h> TryFrom<Matrix<'h>> for SymmetricMatrix<'h> {
 }
 
 /// Forgets that the matrix is symmetric.
+/// A symmetric matrix is a [Matrix]: `&SymmetricMatrix` can be used wherever
+/// a `&Matrix` is expected, and [Matrix] methods can be called on it.
+///
+/// There is no `DerefMut`: changing the matrix through a `&mut Matrix`
+/// (for example adding entries to its [IJMatrix]) could break the symmetry.
+/// Use [SymmetricMatrix::add_elements] instead.
+///
+/// # Example
+///
+/// ```
+/// # fn main() -> Result<(), Box<dyn std::error::Error>> {
+/// # use mpi::topology::Communicator;
+/// use hypre_rs::Matrix;
+/// # let universe = mpi::initialize().ok_or("MPI was already initialized (or finalized) in this process")?;
+/// # let comm = universe.world();
+/// # let ctx = hypre_rs::initialize(&universe)?;
+/// # let (rank, size) = (comm.rank() as u32, comm.size() as u32);
+/// let rows = (rank * 10 / size)..((rank + 1) * 10 / size);
+/// let mut laplacian = ctx.symmetric_matrix(&comm, rows.clone())?;
+/// laplacian.add_elements(rows.clone().map(|i| (i, i, 2.0)))?;
+/// laplacian.add_elements(rows.filter(|&i| i > 0).map(|i| (i, i - 1, -1.0)))?;
+///
+/// // Any function taking a `&Matrix` accepts it.
+/// fn check(matrix: &Matrix<'_>) -> Result<bool, hypre_rs::HypreError> {
+///     matrix.is_symmetric(0.0)
+/// }
+/// assert!(check(&laplacian)?);
+/// # drop(laplacian);
+/// # ctx.finalize()?;
+/// # Ok(())
+/// # }
+/// ```
+impl<'h> Deref for SymmetricMatrix<'h> {
+    type Target = Matrix<'h>;
+
+    fn deref(&self) -> &Matrix<'h> {
+        &self.matrix
+    }
+}
+
 impl<'h> From<SymmetricMatrix<'h>> for Matrix<'h> {
     fn from(symmetric: SymmetricMatrix<'h>) -> Self {
         symmetric.matrix
