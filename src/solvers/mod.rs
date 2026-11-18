@@ -3,7 +3,7 @@ use enum_dispatch::enum_dispatch;
 #[macro_use]
 mod macros;
 #[macro_use]
-mod solver_macro;
+pub(crate) mod solver_macro;
 mod amg;
 mod krylov;
 #[cfg(test)]

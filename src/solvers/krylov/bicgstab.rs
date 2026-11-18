@@ -6,6 +6,7 @@ use std::ptr::null_mut;
 
 use crate::error::HypreError;
 use crate::matrix::Matrix;
+use crate::preconditioners::Preconditioner;
 use crate::solvers::{IterativeSolverStatus, LinearSolver};
 use crate::{HypreContext, HypreResult, Vector};
 use hypre_sys::*;
@@ -25,6 +26,7 @@ hypre_solver! {
     solves LinearSolver for Matrix;
     status HYPRE_ParCSRBiCGSTABGetNumIterations,
         HYPRE_ParCSRBiCGSTABGetFinalRelativeResidualNorm;
+    precond HYPRE_ParCSRBiCGSTABSetPrecond, Preconditioner;
     positive [tol, abs_tol];
     params {
         /// Relative convergence tolerance

@@ -1,6 +1,10 @@
 //! The [HypreContext]: hypre initialization, finalization and object creation.
 
 use crate::matrix::{CSRMatrix, IJMatrix, SymmetricMatrix};
+use crate::preconditioners::{
+    AMGPreconditioner, AMGPreconditionerConfig, SymmetricAMGPreconditioner,
+    SymmetricAMGPreconditionerConfig,
+};
 use crate::solvers::{
     AMGSolver, AMGSolverConfig, BiCGSTABSolver, BiCGSTABSolverConfig, COGMRESSolver,
     COGMRESSolverConfig, FlexGMRESSolver, FlexGMRESSolverConfig, GMRESSolver, GMRESSolverConfig,
@@ -243,6 +247,25 @@ impl HypreContext<'_> {
         config: AMGSolverConfig,
     ) -> HypreResult<AMGSolver<'a>> {
         AMGSolver::new(self, comm, config)
+    }
+
+    /// Creates a [SymmetricAMGPreconditioner]; see
+    /// [SymmetricAMGPreconditioner::new].
+    pub fn symmetric_amg_preconditioner<'a>(
+        &'a self,
+        comm: &'a impl Communicator,
+        config: SymmetricAMGPreconditionerConfig,
+    ) -> HypreResult<SymmetricAMGPreconditioner<'a>> {
+        SymmetricAMGPreconditioner::new(self, comm, config)
+    }
+
+    /// Creates an [AMGPreconditioner]; see [AMGPreconditioner::new].
+    pub fn amg_preconditioner<'a>(
+        &'a self,
+        comm: &'a impl Communicator,
+        config: AMGPreconditionerConfig,
+    ) -> HypreResult<AMGPreconditioner<'a>> {
+        AMGPreconditioner::new(self, comm, config)
     }
 
     fn finalize_raw() -> hypre_sys::HYPRE_Int {

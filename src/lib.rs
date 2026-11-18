@@ -68,7 +68,10 @@ mod utils;
 // Macros from utils are now available.
 
 pub mod matrix;
+// The solver macros are also used by the preconditioners.
+#[macro_use]
 pub mod solvers;
+pub mod preconditioners;
 pub mod vector;
 
 type HypreResult<T> = Result<T, error::HypreError>;

@@ -7,6 +7,7 @@ use std::ptr::null_mut;
 
 use crate::error::HypreError;
 use crate::matrix::Matrix;
+use crate::preconditioners::Preconditioner;
 use crate::solvers::{IterativeSolverStatus, LinearSolver};
 use crate::{HypreContext, HypreResult, Vector};
 use hypre_sys::*;
@@ -43,6 +44,7 @@ hypre_solver! {
     solves LinearSolver for Matrix;
     status HYPRE_ParCSRGMRESGetNumIterations, HYPRE_ParCSRGMRESGetFinalRelativeResidualNorm,
         converged HYPRE_GMRESGetConverged;
+    precond HYPRE_ParCSRGMRESSetPrecond, Preconditioner;
     positive [tol, abs_tol];
     params {
         /// Relative convergence tolerance
@@ -84,6 +86,7 @@ hypre_solver! {
     status HYPRE_ParCSRFlexGMRESGetNumIterations,
         HYPRE_ParCSRFlexGMRESGetFinalRelativeResidualNorm,
         converged HYPRE_FlexGMRESGetConverged;
+    precond HYPRE_ParCSRFlexGMRESSetPrecond, Preconditioner;
     positive [tol, abs_tol];
     params {
         /// Relative convergence tolerance
@@ -124,6 +127,7 @@ hypre_solver! {
     solves LinearSolver for Matrix;
     status HYPRE_ParCSRLGMRESGetNumIterations, HYPRE_ParCSRLGMRESGetFinalRelativeResidualNorm,
         converged HYPRE_LGMRESGetConverged;
+    precond HYPRE_ParCSRLGMRESSetPrecond, Preconditioner;
     positive [tol, abs_tol];
     params {
         /// Relative convergence tolerance
@@ -167,6 +171,7 @@ hypre_solver! {
     status HYPRE_ParCSRCOGMRESGetNumIterations,
         HYPRE_ParCSRCOGMRESGetFinalRelativeResidualNorm,
         converged HYPRE_COGMRESGetConverged;
+    precond HYPRE_ParCSRCOGMRESSetPrecond, Preconditioner;
     positive [tol, abs_tol];
     params {
         /// Relative convergence tolerance
