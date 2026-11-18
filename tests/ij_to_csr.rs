@@ -27,10 +27,16 @@ fn ij_to_csr_conversion_outlives_ij() -> Result<(), Box<dyn std::error::Error>> 
         rhs.add_elements((b..e).map(|i| (i, 2.0f64)))?;
         let mut x = IJVector::new(&ctx, &comm, b..e)?;
         x.add_elements((b..e).map(|i| (i, 0.0f64)))?;
+        let mut x = Vector::IJ(x);
 
         let solver = PCGSolver::new(&ctx, &comm, Default::default())?;
-        let status = solver.solve(&mut matrix, &Vector::IJ(rhs), &mut Vector::IJ(x))?;
+        let status = solver.solve(&mut matrix, &Vector::IJ(rhs), &mut x)?;
         assert!(status.converged);
+        // 2 * x = 2
+        let Vector::IJ(x) = &x;
+        for v in x.get_values(b..e)? {
+            assert!((v - 1.0).abs() < 1e-12, "x = {v}, expected 1");
+        }
     }
     // hypre objects must be dropped before hypre is finalized (checked by the compiler)
     ctx.finalize()?;

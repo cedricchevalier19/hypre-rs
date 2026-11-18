@@ -39,7 +39,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
         if row + mesh_size < global_size {
             nnz_buffer.push((row, row + mesh_size, -1.0));
         }
-        ij_matrix.add_elements(&mut nnz_buffer.iter().map(|x| *x))?;
+        ij_matrix.add_elements(nnz_buffer.iter().copied())?;
         // Allow nnz_buffer to not disappear
         nnz_buffer.clear();
     }
