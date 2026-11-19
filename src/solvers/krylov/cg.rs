@@ -6,6 +6,7 @@ use std::ptr::null_mut;
 
 use crate::error::HypreError;
 use crate::matrix::SymmetricMatrix;
+use crate::preconditioners::SymmetricPreconditioner;
 use crate::solvers::{IterativeSolverStatus, SymmetricLinearSolver};
 use crate::{HypreContext, HypreResult, Vector};
 use hypre_sys::*;
@@ -53,6 +54,7 @@ hypre_solver! {
     solves SymmetricLinearSolver for SymmetricMatrix;
     status HYPRE_ParCSRPCGGetNumIterations, HYPRE_ParCSRPCGGetFinalRelativeResidualNorm,
         converged HYPRE_PCGGetConverged;
+    precond HYPRE_ParCSRPCGSetPrecond, SymmetricPreconditioner;
     positive [tol, abs_tol, res_tol, conv_tol_fact];
     params {
         /// Relative convergence tolerance

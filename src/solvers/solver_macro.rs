@@ -1,4 +1,5 @@
-//! The `hypre_solver!` macro, which generates the hypre solvers.
+//! The `hypre_solver!` macro, which generates the hypre solvers and
+//! preconditioners.
 
 use crate::HypreResult;
 use hypre_sys::{HYPRE_Int, HYPRE_Real};
@@ -33,17 +34,22 @@ impl FromHypre<HYPRE_Int> for bool {
     }
 }
 
-/// Generates a solver wrapping a ParCSR solver of hypre:
+/// Generates a type wrapping a ParCSR solver or preconditioner of hypre:
 ///
-/// - the solver type, owning its `HYPRE_Solver` handle (`new`, `config`,
-///   `Drop`), implementing the solver trait given by
-///   `solves Trait for MatrixType` ([LinearSolver](crate::solvers::LinearSolver)
-///   for `Matrix`, or
+/// - the type, owning its `HYPRE_Solver` handle (`new`, `config`, `Drop`),
+/// - its configuration type, with a builder that rejects negative values of
+///   the `positive` parameters,
+/// - `current_config` when hypre has getters for the parameters,
+/// - with `setup`, `solve`, `solves Trait for MatrixType` and `status`, the
+///   solver trait
+///   ([LinearSolver](crate::solvers::LinearSolver) for `Matrix`, or
 ///   [SymmetricLinearSolver](crate::solvers::SymmetricLinearSolver) for
-///   `SymmetricMatrix`),
-/// - its configuration type, with a builder that rejects negative
-///   tolerances,
-/// - `current_config` when hypre has getters for the parameters.
+///   `SymmetricMatrix`); preconditioners leave it out,
+/// - with `precond SetPrecond, PreconditionerType`, an owned preconditioner
+///   (`with_preconditioner`, `preconditioner`), set with hypre's
+///   `SetPrecond` function.
+///
+/// `create` is called as `create(comm, &mut handle)`.
 ///
 /// Each parameter `field: Type => Setter` is an `Option<Type>` field of the
 /// configuration, applied with `Setter` when `Some`. The optional
@@ -56,9 +62,12 @@ macro_rules! hypre_solver {
         $(#[$config_doc:meta])*
         config $Config:ident, $Builder:ident;
         create $create:path, destroy $destroy:path;
-        setup $setup:path, solve $solve:path;
-        solves $Trait:ident for $Mat:ident;
-        status $num_iters:path, $res_norm:path $(, converged $converged:path)?;
+        $(
+            setup $setup:path, solve $solve:path;
+            solves $Trait:ident for $Mat:ident;
+            status $num_iters:path, $res_norm:path $(, converged $converged:path)?;
+        )?
+        $( precond $set_precond:path, $Precond:ident; )?
         positive [$($positive:ident),*];
         params {
             $( $(#[$field_doc:meta])* $field:ident: $ty:ty => $setter:path, )*
@@ -71,6 +80,11 @@ macro_rules! hypre_solver {
         #[derive(Debug)]
         pub struct $Solver<'h> {
             internal_solver: HYPRE_Solver,
+            $(
+            /// hypre does not copy the preconditioner: keep it alive while
+            /// the solver is.
+            preconditioner: Option<$Precond<'h>>,
+            )?
             _hypre: PhantomData<&'h ()>,
         }
 
@@ -94,7 +108,7 @@ macro_rules! hypre_solver {
         }
 
         impl<'h> $Solver<'h> {
-            /// Creates a solver with the given configuration.
+            #[doc = concat!("Creates a [", stringify!($Solver), "] with the given configuration.")]
             ///
             /// # Errors
             ///
@@ -106,6 +120,7 @@ macro_rules! hypre_solver {
             ) -> HypreResult<Self> {
                 let mut solver = Self {
                     internal_solver: null_mut(),
+                    $( preconditioner: None::<$Precond<'h>>, )?
                     _hypre: PhantomData,
                 };
                 unsafe {
@@ -115,22 +130,21 @@ macro_rules! hypre_solver {
                 solver.config(config)
             }
 
-            /// Changes the configuration of the solver. Fields set to `None`
-            /// keep their current value.
+            /// Changes the configuration. Fields set to `None` keep their
+            /// current value.
             ///
             /// # Errors
             ///
             /// [HypreError::ConversionError] if a value does not fit hypre's
-            /// type, or the error returned by hypre. The solver is dropped
-            /// then, and fields set before the failing one were already
-            /// applied.
+            /// type, or the error returned by hypre. `self` is dropped then,
+            /// and fields set before the failing one were already applied.
             pub fn config(self, config: $Config) -> HypreResult<Self> {
                 $( set_parameter![$setter, self.internal_solver, config.$field]; )*
                 Ok(self)
             }
 
             $(
-            /// Returns the configuration of the solver, as read from hypre.
+            /// Returns the configuration, as read from hypre.
             pub fn current_config(&self) -> HypreResult<$Config> {
                 let mut config = $Config::default();
                 $(
@@ -142,8 +156,40 @@ macro_rules! hypre_solver {
                 Ok(config)
             }
             )?
+
+            $(
+            /// Sets the preconditioner, replacing (and dropping) the previous
+            /// one. The solver owns it from now on.
+            ///
+            /// # Errors
+            ///
+            /// The error returned by hypre; `self` is dropped then.
+            pub fn with_preconditioner(
+                mut self,
+                preconditioner: impl Into<$Precond<'h>>,
+            ) -> HypreResult<Self> {
+                let preconditioner = preconditioner.into();
+                let raw = preconditioner.raw();
+                unsafe {
+                    check_hypre!($set_precond(
+                        self.internal_solver,
+                        raw.solve,
+                        raw.setup,
+                        raw.solver
+                    ));
+                }
+                self.preconditioner = Some(preconditioner);
+                Ok(self)
+            }
+
+            /// Returns the preconditioner, if one is set.
+            pub fn preconditioner(&self) -> Option<&$Precond<'h>> {
+                self.preconditioner.as_ref()
+            }
+            )?
         }
 
+        $(
         impl $Trait for $Solver<'_> {
             fn solve(
                 &self,
@@ -174,6 +220,7 @@ macro_rules! hypre_solver {
                 }
             }
         }
+        )?
 
         impl_hypre_drop!($Solver<'_>, internal_solver, $destroy);
     };
