@@ -1,8 +1,7 @@
 //! Runtime symmetry check: `Matrix::is_symmetric` and
-//! `TryFrom<IJMatrix | CSRMatrix> for SymmetricMatrix`, on any number of MPI
-//! ranks.
+//! `TryFrom<CSRMatrix> for SymmetricMatrix`, on any number of MPI ranks.
 
-use hypre_rs::matrix::{CSRMatrix, IJMatrix};
+use hypre_rs::matrix::{CSRMatrix, LocalMatrixBuilder};
 use hypre_rs::solvers::PCGSolverConfigBuilder;
 use hypre_rs::{HypreContext, HypreError, Matrix, ParVector, SymmetricMatrix};
 use mpi::topology::{Communicator, SimpleCommunicator};
@@ -21,15 +20,16 @@ fn laplacian<'a>(
     rows: Range<u32>,
     extra: &[(u32, u32, f64)],
 ) -> Result<CSRMatrix<'a>, HypreError> {
-    let mut ij = ctx.ij_matrix(comm, rows.clone(), rows.clone())?;
+    // Row i - 1 may belong to the previous rank: a distributed builder.
+    let mut ij = ctx.distributed_matrix_builder(comm, rows.clone(), rows.clone())?;
     for i in rows.clone() {
-        ij.add_elements([(i, i, 2.0)])?;
+        ij.add([(i, i, 2.0)])?;
         if i > 0 {
-            ij.add_elements([(i, i - 1, -1.0), (i - 1, i, -1.0)])?;
+            ij.add([(i, i - 1, -1.0), (i - 1, i, -1.0)])?;
         }
     }
     // Extra entries are added once, by the rank owning their row.
-    ij.add_elements(
+    ij.add(
         extra
             .iter()
             .copied()
@@ -51,8 +51,8 @@ fn symmetry_check() -> Result<(), Box<dyn std::error::Error>> {
 
         // Symmetric: converts, and CG solves it. A * [1, ..., 1] = [1, 0, ..., 0, 1].
         let a = SymmetricMatrix::try_from(laplacian(&ctx, &comm, rows.clone(), &[])?)?;
-        let mut b = ctx.ij_vector(&comm, rows.clone())?;
-        b.add_elements(
+        let mut b = ctx.local_vector_builder(&comm, rows.clone())?;
+        b.add(
             rows.clone()
                 .map(|i| (i, if i == 0 || i == N - 1 { 1.0 } else { 0.0 })),
         )?;
@@ -71,10 +71,10 @@ fn symmetry_check() -> Result<(), Box<dyn std::error::Error>> {
         }
         drop((a, x, solver));
 
-        // `assemble` is the same as `CSRMatrix::try_from`.
-        let mut ij = ctx.ij_matrix(&comm, rows.clone(), rows.clone())?;
-        ij.add_elements(rows.clone().map(|i| (i, i, 2.0)))?;
-        let csr = CSRMatrix::try_from(ij)?;
+        // A diagonal matrix built by a local builder.
+        let mut ij = ctx.local_matrix_builder(&comm, rows.clone(), rows.clone())?;
+        ij.add(rows.clone().map(|i| (i, i, 2.0)))?;
+        let csr: CSRMatrix<'_> = ij.assemble()?;
         assert!(csr.is_symmetric(0.0)?);
         drop(csr);
 
@@ -118,16 +118,16 @@ fn symmetry_check() -> Result<(), Box<dyn std::error::Error>> {
 
         // Not square: N rows, 2 * N columns.
         let cols = hypre_rs::distribute_rows(&comm, 2 * N);
-        let mut ij = IJMatrix::new(&ctx, &comm, rows.clone(), cols)?;
-        ij.add_elements(rows.clone().map(|i| (i, i, 1.0)))?;
+        let mut ij = LocalMatrixBuilder::new(&ctx, &comm, rows.clone(), cols)?;
+        ij.add(rows.clone().map(|i| (i, i, 1.0)))?;
         assert!(!ij.assemble()?.is_symmetric(0.0)?);
 
         // A matrix built from its lower triangle is exactly symmetric. Once
         // assembled, it is a Matrix, also as a trait object.
-        let mut s = ctx.symmetric_matrix(&comm, rows.clone())?;
-        s.add_elements(rows.clone().map(|i| (i, i, 2.0)))?;
-        s.add_elements(rows.clone().filter(|&i| i > 0).map(|i| (i, i - 1, -1.0)))?;
-        s.add_elements(rows.clone().filter(|&i| i >= 3).map(|i| (i, i - 3, 0.25)))?;
+        let mut s = ctx.symmetric_matrix_builder(&comm, rows.clone())?;
+        s.add(rows.clone().map(|i| (i, i, 2.0)))?;
+        s.add(rows.clone().filter(|&i| i > 0).map(|i| (i, i - 1, -1.0)))?;
+        s.add(rows.clone().filter(|&i| i >= 3).map(|i| (i, i - 3, 0.25)))?;
         let s = s.assemble()?;
         assert!(s.is_symmetric(0.0)?);
         let as_matrix: &dyn Matrix = &s;

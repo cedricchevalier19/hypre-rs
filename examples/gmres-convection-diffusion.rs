@@ -48,9 +48,9 @@ fn convection_diffusion<'a>(
     comm: &'a SimpleCommunicator,
     rows: Range<u32>,
 ) -> Result<CSRMatrix<'a>, HypreError> {
-    let mut a = ctx.ij_matrix(comm, rows.clone(), rows.clone())?;
+    let mut a = ctx.local_matrix_builder(comm, rows.clone(), rows.clone())?;
     for row in rows {
-        a.add_elements(
+        a.add(
             row_entries(row)
                 .into_iter()
                 .map(|(col, value)| (row, col, value)),

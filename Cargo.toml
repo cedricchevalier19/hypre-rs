@@ -14,4 +14,3 @@ enum_dispatch = "0.3"
 hypre-sys = {path="hypre-sys", version= "0.1"}
 mpi = { version = "0.8", features = [] }
 thiserror = "2.0"
-itertools = "0.15"

@@ -85,8 +85,8 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     let ctx = hypre_rs::initialize(&universe)?;
 
     let rows = distribute_rows(&comm, M * M);
-    let mut a = ctx.symmetric_matrix(&comm, rows.clone())?;
-    a.add_elements(diffusion_lower(rows.clone()))?;
+    let mut a = ctx.symmetric_matrix_builder(&comm, rows.clone())?;
+    a.add(diffusion_lower(rows.clone()))?;
     let a = a.assemble()?;
 
     // b = A * [1, ..., 1], so the exact solution is x = [1, ..., 1]. The

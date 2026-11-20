@@ -32,8 +32,8 @@ fn vector<'a>(
     rows: Range<u32>,
     f: impl Fn(u32) -> f64,
 ) -> Result<ParVector<'a>, HypreError> {
-    let mut v = ctx.ij_vector(comm, rows.clone())?;
-    v.add_elements(rows.map(|i| (i, f(i))))?;
+    let mut v = ctx.local_vector_builder(comm, rows.clone())?;
+    v.add(rows.map(|i| (i, f(i))))?;
     v.assemble()
 }
 
@@ -147,9 +147,9 @@ fn preconditioners() -> TestResult {
         let rows = hypre_rs::distribute_rows(&comm, N);
 
         // CG on the 1D Laplacian tridiag(-1, 2, -1).
-        let mut a = ctx.symmetric_matrix(&comm, rows.clone())?;
-        a.add_elements(rows.clone().map(|i| (i, i, 2.0)))?;
-        a.add_elements(rows.clone().filter(|&i| i > 0).map(|i| (i, i - 1, -1.0)))?;
+        let mut a = ctx.symmetric_matrix_builder(&comm, rows.clone())?;
+        a.add(rows.clone().map(|i| (i, i, 2.0)))?;
+        a.add(rows.clone().filter(|&i| i > 0).map(|i| (i, i - 1, -1.0)))?;
         let a = a.assemble()?;
 
         let plain = cg(&ctx, &comm, rows.clone(), &a, None)?;
@@ -237,14 +237,14 @@ fn preconditioners() -> TestResult {
 
         // The non-symmetric convection-diffusion matrix, with every general
         // solver and preconditioner.
-        let mut ij = ctx.ij_matrix(&comm, rows.clone(), rows.clone())?;
+        let mut ij = ctx.local_matrix_builder(&comm, rows.clone(), rows.clone())?;
         for i in rows.clone() {
-            ij.add_elements([(i, i, 2.0)])?;
+            ij.add([(i, i, 2.0)])?;
             if i > 0 {
-                ij.add_elements([(i, i - 1, LOWER)])?;
+                ij.add([(i, i - 1, LOWER)])?;
             }
             if i + 1 < N {
-                ij.add_elements([(i, i + 1, UPPER)])?;
+                ij.add([(i, i + 1, UPPER)])?;
             }
         }
         let a = ij.assemble()?;

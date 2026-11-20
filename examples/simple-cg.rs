@@ -15,7 +15,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     let local_rows = distribute_rows(&mpi_comm, global_size);
 
     // Create a new symmetric matrix
-    let mut matrix = ctx.symmetric_matrix(&mpi_comm, local_rows.clone())?;
+    let mut matrix = ctx.symmetric_matrix_builder(&mpi_comm, local_rows.clone())?;
 
     // Fill the lower triangle of the 2D Laplacian; the upper triangle is
     // added by symmetry.
@@ -28,7 +28,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
             nnz_buffer.push((row, row - 1, -1.0));
         }
         nnz_buffer.push((row, row, 4.0));
-        matrix.add_elements(nnz_buffer.iter().copied())?;
+        matrix.add(nnz_buffer.iter().copied())?;
         // Allow nnz_buffer to not disappear
         nnz_buffer.clear();
     }

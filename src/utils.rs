@@ -62,8 +62,8 @@ pub(crate) fn inclusive_bounds(range: &Range<u32>) -> HypreResult<(HYPRE_BigInt,
 ///
 /// Rank `r` of `size` gets rows `r * n / size .. (r + 1) * n / size`: block
 /// sizes differ by at most one, and ranks beyond `n` get an empty range.
-/// The result is what [IJMatrix::new](crate::matrix::IJMatrix::new),
-/// [IJVector::new](crate::IJVector::new) and the context's factories expect.
+/// The result is the `rows` range that the matrix and vector builders and
+/// [ParVector::zeros](crate::ParVector::zeros) expect.
 /// It is not collective: every rank computes its own range.
 ///
 /// # Example

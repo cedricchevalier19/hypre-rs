@@ -27,9 +27,9 @@ pub enum HypreError {
     /// # let comm = universe.world();
     /// # let ctx = hypre_rs::initialize(&universe)?;
     /// # let rows = distribute_rows(&comm, 100);
-    /// # let mut a = ctx.symmetric_matrix(&comm, rows.clone())?;
-    /// # a.add_elements(rows.clone().map(|i| (i, i, 2.0)))?;
-    /// # a.add_elements(rows.clone().filter(|&i| i > 0).map(|i| (i, i - 1, -1.0)))?;
+    /// # let mut a = ctx.symmetric_matrix_builder(&comm, rows.clone())?;
+    /// # a.add(rows.clone().map(|i| (i, i, 2.0)))?;
+    /// # a.add(rows.clone().filter(|&i| i > 0).map(|i| (i, i - 1, -1.0)))?;
     /// # let a = a.assemble()?;
     /// # let b = ParVector::from_fn(&ctx, &comm, rows.clone(), |_| 1.0)?;
     /// # let mut x = ParVector::zeros(&ctx, &comm, rows)?;
@@ -68,6 +68,10 @@ pub enum HypreError {
     NotLowerTriangular,
     #[error("Matrix is not symmetric")]
     NotSymmetric,
+    /// A local builder was given an entry for a row that another MPI rank
+    /// owns; use a distributed builder for those.
+    #[error("Row {0} is not owned by this MPI rank: local builders only take local rows")]
+    NotLocalRow(hypre_sys::HYPRE_BigInt),
     #[error(transparent)]
     ConversionError(#[from] TryFromIntError),
     #[error(transparent)]

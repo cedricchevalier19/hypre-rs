@@ -24,9 +24,9 @@
 //!
 //! // CG needs a symmetric matrix: give the lower triangle, the upper one
 //! // is added by symmetry. Here the 1D Laplacian tridiag(-1, 2, -1).
-//! let mut matrix = ctx.symmetric_matrix(&mpi_comm, rows.clone())?;
-//! matrix.add_elements(rows.clone().map(|i| (i, i, 2.0)))?;
-//! matrix.add_elements(rows.clone().filter(|&i| i > 0).map(|i| (i, i - 1, -1.0)))?;
+//! let mut matrix = ctx.symmetric_matrix_builder(&mpi_comm, rows.clone())?;
+//! matrix.add(rows.clone().map(|i| (i, i, 2.0)))?;
+//! matrix.add(rows.clone().filter(|&i| i > 0).map(|i| (i, i - 1, -1.0)))?;
 //! // Solvers need an assembled matrix.
 //! let matrix = matrix.assemble()?;
 //!
@@ -77,7 +77,7 @@ type HypreResult<T> = Result<T, error::HypreError>;
 pub use error::HypreError;
 pub use matrix::{Matrix, SymmetricMatrix};
 pub use utils::distribute_rows;
-pub use vector::{IJVector, ParVector};
+pub use vector::ParVector;
 
 mod context;
 pub use context::{initialize, HypreContext};

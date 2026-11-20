@@ -42,9 +42,9 @@ hypre_solver! {
     /// // The 1D Laplacian tridiag(-1, 2, -1), from its lower triangle.
     /// let n = 100;
     /// let rows = hypre_rs::distribute_rows(&comm, n);
-    /// let mut a = ctx.symmetric_matrix(&comm, rows.clone())?;
-    /// a.add_elements(rows.clone().map(|i| (i, i, 2.0)))?;
-    /// a.add_elements(rows.clone().filter(|&i| i > 0).map(|i| (i, i - 1, -1.0)))?;
+    /// let mut a = ctx.symmetric_matrix_builder(&comm, rows.clone())?;
+    /// a.add(rows.clone().map(|i| (i, i, 2.0)))?;
+    /// a.add(rows.clone().filter(|&i| i > 0).map(|i| (i, i - 1, -1.0)))?;
     /// let a = a.assemble()?;
     /// let b = ParVector::from_fn(&ctx, &comm, rows.clone(), |_| 1.0)?;
     /// let mut x = ParVector::zeros(&ctx, &comm, rows.clone())?;

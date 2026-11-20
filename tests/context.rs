@@ -16,16 +16,16 @@ fn reinitialize() -> Result<(), Box<dyn std::error::Error>> {
         hypre_rs::initialize(&universe),
         Err(HypreError::AlreadyInitialized)
     ));
-    drop(ctx.ij_vector(&comm, 0..0)?);
+    drop(ctx.distributed_vector_builder(&comm, 0..0)?);
     ctx.finalize()?;
 
     // Dropping the context finalizes hypre too.
     let ctx = hypre_rs::initialize(&universe)?;
-    drop(ctx.ij_vector(&comm, 0..0)?);
+    drop(ctx.distributed_vector_builder(&comm, 0..0)?);
     drop(ctx);
 
     let ctx = hypre_rs::initialize(&universe)?;
-    drop(ctx.ij_vector(&comm, 0..0)?);
+    drop(ctx.distributed_vector_builder(&comm, 0..0)?);
     ctx.finalize()?;
     Ok(())
 }
