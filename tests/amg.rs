@@ -1,7 +1,7 @@
 //! The algebraic multigrid solver (BoomerAMG), on any number of MPI ranks.
 
 use hypre_rs::solvers::{AMGSolver, AMGSolverConfigBuilder, LinearSolver, Solver};
-use hypre_rs::vector::IJVector;
+use hypre_rs::vector::ParVector;
 use hypre_rs::{HypreContext, HypreError, Matrix};
 use mpi::topology::{Communicator, SimpleCommunicator};
 use std::ops::Range;
@@ -15,9 +15,10 @@ fn rhs<'a>(
     ctx: &'a HypreContext<'_>,
     comm: &'a SimpleCommunicator,
     rows: Range<u32>,
-) -> Result<IJVector<'a>, HypreError> {
+) -> Result<ParVector<'a>, HypreError> {
     let mut b = ctx.ij_vector(comm, rows.clone())?;
     b.add_elements(rows.map(|i| (i, if i == 0 || i == N - 1 { 1.0 } else { 0.0 })))?;
+    let b = b.assemble()?;
     Ok(b)
 }
 
@@ -28,10 +29,11 @@ fn check_solution(
     rows: Range<u32>,
     solver: &Solver<'_>,
     a: &(impl Matrix + ?Sized),
-    b: &IJVector<'_>,
+    b: &ParVector<'_>,
 ) -> Result<(), Box<dyn std::error::Error>> {
     let mut x = ctx.ij_vector(comm, rows.clone())?;
     x.add_elements(rows.clone().map(|i| (i, 0.0)))?;
+    let mut x = x.assemble()?;
     let status = solver.solve(a, b, &mut x)?;
     assert!(status.converged, "{status}");
     assert!(status.res_num <= 1e-10, "{status}");
@@ -84,7 +86,7 @@ fn amg_solver() -> Result<(), Box<dyn std::error::Error>> {
             .max_iters(1usize)
             .build()?;
         let solver = Solver::AMG(ctx.amg_solver(&comm, config)?);
-        let mut x = ctx.ij_vector(&comm, rows.clone())?;
+        let mut x = ctx.ij_vector(&comm, rows.clone())?.assemble()?;
         assert!(matches!(
             solver.solve(&a, &b, &mut x),
             Err(HypreError::HypreConvError)

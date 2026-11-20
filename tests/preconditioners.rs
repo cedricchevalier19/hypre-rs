@@ -10,7 +10,7 @@ use hypre_rs::solvers::{
     GMRESSolverConfigBuilder, IterativeSolverStatus, LGMRESSolverConfigBuilder, LinearSolver,
     PCGSolverConfigBuilder, Solver, SymmetricLinearSolver, SymmetricSolver,
 };
-use hypre_rs::vector::IJVector;
+use hypre_rs::vector::ParVector;
 use hypre_rs::{HypreContext, HypreError, SymmetricMatrix};
 use mpi::topology::{Communicator, SimpleCommunicator};
 use std::ops::Range;
@@ -25,20 +25,20 @@ const UPPER: f64 = -0.5;
 
 type TestResult<T = ()> = Result<T, Box<dyn std::error::Error>>;
 
-/// The vector whose entry `i` is `f(i)`.
+/// The assembled vector whose entry `i` is `f(i)`.
 fn vector<'a>(
     ctx: &'a HypreContext<'_>,
     comm: &'a SimpleCommunicator,
     rows: Range<u32>,
     f: impl Fn(u32) -> f64,
-) -> Result<IJVector<'a>, HypreError> {
+) -> Result<ParVector<'a>, HypreError> {
     let mut v = ctx.ij_vector(comm, rows.clone())?;
     v.add_elements(rows.map(|i| (i, f(i))))?;
-    Ok(v)
+    v.assemble()
 }
 
 /// Checks that `x = [1, ..., 1]`.
-fn check_ones(x: &IJVector<'_>, rows: Range<u32>, what: &str) -> TestResult {
+fn check_ones(x: &ParVector<'_>, rows: Range<u32>, what: &str) -> TestResult {
     for (i, v) in rows.clone().zip(x.get_values(rows)?) {
         assert!((v - 1.0).abs() < 1e-6, "{what}: x[{i}] = {v}, expected 1");
     }

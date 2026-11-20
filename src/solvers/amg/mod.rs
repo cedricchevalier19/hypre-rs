@@ -47,8 +47,10 @@ hypre_solver! {
     /// let a = a.assemble()?;
     /// let mut b = ctx.ij_vector(&comm, rows.clone())?;
     /// b.add_elements(rows.clone().map(|i| (i, 1.0)))?;
+    /// let b = b.assemble()?;
     /// let mut x = ctx.ij_vector(&comm, rows.clone())?;
     /// x.add_elements(rows.clone().map(|i| (i, 0.0)))?;
+    /// let mut x = x.assemble()?;
     ///
     /// let config = AMGSolverConfigBuilder::default()
     ///     .tol(1e-10)

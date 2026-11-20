@@ -195,12 +195,12 @@ macro_rules! hypre_solver {
             fn solve<M: $crate::Matrix + ?Sized>(
                 &self,
                 mat: &$MatTy,
-                rhs: &$crate::vector::IJVector<'_>,
-                x: &mut $crate::vector::IJVector<'_>,
+                rhs: &$crate::vector::ParVector<'_>,
+                x: &mut $crate::vector::ParVector<'_>,
             ) -> HypreResult<IterativeSolverStatus> {
                 let a = $crate::matrix::sealed::AsParCSR::as_parcsr(mat)?;
-                let b = rhs.as_par_vector()?;
-                let x = x.as_par_vector()?;
+                let b = rhs.as_raw();
+                let x = x.as_raw();
                 unsafe {
                     check_hypre!($setup(self.internal_solver, a, b, x));
                     // A solve that does not converge returns HYPRE_ERROR_CONV.

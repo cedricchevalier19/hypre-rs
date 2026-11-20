@@ -39,9 +39,11 @@ fn laplacian_solution_values() -> Result<(), Box<dyn std::error::Error>> {
             rows.clone()
                 .map(|i| (i, if i == 0 || i == N - 1 { 1.0 } else { 0.0 })),
         )?;
+        let b = b.assemble()?;
 
         let mut x = ctx.ij_vector(&comm, rows.clone())?;
         x.add_elements(rows.clone().map(|i| (i, 0.0)))?;
+        let mut x = x.assemble()?;
 
         // Too few iterations: hypre reports a convergence error.
         let config = PCGSolverConfigBuilder::default()

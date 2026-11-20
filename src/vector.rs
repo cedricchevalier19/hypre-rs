@@ -8,6 +8,28 @@ use std::marker::PhantomData;
 use std::ops::Range;
 use std::ptr::null_mut;
 
+/// Distributed vector under construction, filled with
+/// [IJVector::add_elements].
+///
+/// Solvers need an assembled vector: [IJVector::assemble] turns it into a
+/// [ParVector].
+///
+/// ```compile_fail
+/// # fn main() -> Result<(), Box<dyn std::error::Error>> {
+/// use hypre_rs::solvers::{LinearSolver, Solver};
+/// # let universe = mpi::initialize().ok_or("MPI was already initialized (or finalized) in this process")?;
+/// # let comm = universe.world();
+/// # let ctx = hypre_rs::initialize(&universe)?;
+/// let mut a = ctx.ij_matrix(&comm, 0..1, 0..1)?;
+/// a.add_elements([(0u32, 0u32, 1.0)].into_iter())?;
+/// let a = a.assemble()?;
+/// let b = ctx.ij_vector(&comm, 0..1)?.assemble()?;
+/// let mut x = ctx.ij_vector(&comm, 0..1)?;
+/// let solver = Solver::GMRES(ctx.gmres_solver(&comm, Default::default())?);
+/// solver.solve(&a, &b, &mut x)?; // `x` is not assembled
+/// # Ok(())
+/// # }
+/// ```
 #[derive(Debug)]
 pub struct IJVector<'h> {
     internal: HYPRE_IJVector,
@@ -52,14 +74,31 @@ impl<'h> IJVector<'h> {
         Ok(out)
     }
 
-    /// Assembles the vector and returns its ParVector object.
-    pub(crate) fn as_par_vector(&self) -> HypreResult<HYPRE_ParVector> {
-        let mut out: *mut c_void = null_mut();
+    /// Assembles the vector into a [ParVector], the format hypre's solvers
+    /// use.
+    ///
+    /// Assembly adds the entries given for rows owned by other MPI ranks to
+    /// those ranks' rows, so it is collective. Entries cannot be added
+    /// afterwards.
+    ///
+    /// # Errors
+    ///
+    /// The error returned by hypre.
+    pub fn assemble(self) -> HypreResult<ParVector<'h>> {
+        let mut par: *mut c_void = null_mut();
         unsafe {
             check_hypre!(HYPRE_IJVectorAssemble(self.internal));
-            check_hypre!(HYPRE_IJVectorGetObject(self.internal, &mut out));
+            check_hypre!(HYPRE_IJVectorGetObject(self.internal, &mut par));
+            // `self` is dropped on return, and HYPRE_IJVectorDestroy would
+            // also destroy the ParVector. With object type -1 it only frees
+            // the IJ interface, so the returned ParVector becomes the sole
+            // owner.
+            check_hypre!(HYPRE_IJVectorSetObjectType(self.internal, -1));
         }
-        Ok(out as HYPRE_ParVector)
+        Ok(ParVector {
+            internal: par as HYPRE_ParVector,
+            _hypre: PhantomData,
+        })
     }
 
     /// Adds `value` to entry `index` for every `(index, value)` of `nnz`.
@@ -96,8 +135,8 @@ impl<'h> IJVector<'h> {
     /// current MPI rank.
     ///
     /// This only reads local data, so it is not collective. Contributions
-    /// that other MPI ranks added to these rows are only included once the
-    /// vector has been assembled (solving a system with it assembles it).
+    /// that other MPI ranks added to these rows are not included: they are
+    /// only added by [IJVector::assemble] (see [ParVector::get_values]).
     ///
     /// # Errors
     ///
@@ -144,3 +183,71 @@ impl<'h> IJVector<'h> {
 }
 
 impl_hypre_drop!(IJVector<'_>, internal, HYPRE_IJVectorDestroy);
+
+/// Assembled distributed vector, which hypre's solvers use; made by
+/// [IJVector::assemble].
+///
+/// Not `Clone`: copying the handle would destroy it twice.
+///
+/// # Example
+///
+/// ```
+/// # fn main() -> Result<(), Box<dyn std::error::Error>> {
+/// # use mpi::topology::Communicator;
+/// # let universe = mpi::initialize().ok_or("MPI was already initialized (or finalized) in this process")?;
+/// # let comm = universe.world();
+/// # let ctx = hypre_rs::initialize(&universe)?;
+/// # let (rank, size) = (comm.rank() as u32, comm.size() as u32);
+/// let rows = (rank * 10 / size)..((rank + 1) * 10 / size);
+/// let mut vector = ctx.ij_vector(&comm, rows.clone())?;
+/// vector.add_elements(rows.clone().map(|i| (i, f64::from(i))))?;
+/// let vector = vector.assemble()?;
+/// let values = vector.get_values(rows.clone())?;
+/// assert!(values.iter().zip(rows).all(|(&v, i)| v == f64::from(i)));
+/// # drop(vector);
+/// # ctx.finalize()?;
+/// # Ok(())
+/// # }
+/// ```
+#[derive(Debug)]
+pub struct ParVector<'h> {
+    internal: HYPRE_ParVector,
+    _hypre: PhantomData<&'h ()>,
+}
+
+impl ParVector<'_> {
+    /// Returns the values of the rows in `rows`, which must be owned by the
+    /// current MPI rank.
+    ///
+    /// This only reads local data, so it is not collective.
+    ///
+    /// # Errors
+    ///
+    /// [HypreError::InvalidRange] if `rows.start > rows.end`, or the error
+    /// returned by hypre (for example for a row that is not owned locally).
+    pub fn get_values(&self, rows: Range<u32>) -> HypreResult<Vec<HYPRE_Complex>> {
+        if rows.start > rows.end {
+            return Err(HypreError::InvalidRange);
+        }
+        let mut indices = rows
+            .map(HYPRE_BigInt::try_from)
+            .collect::<Result<Vec<_>, _>>()?;
+        let mut values: Vec<HYPRE_Complex> = vec![Default::default(); indices.len()];
+        unsafe {
+            check_hypre!(HYPRE_ParVectorGetValues(
+                self.internal,
+                indices.len().try_into()?,
+                indices.as_mut_ptr(),
+                values.as_mut_ptr(),
+            ));
+        }
+        Ok(values)
+    }
+
+    /// The ParVector object, for hypre's solvers.
+    pub(crate) fn as_raw(&self) -> HYPRE_ParVector {
+        self.internal
+    }
+}
+
+impl_hypre_drop!(ParVector<'_>, internal, HYPRE_ParVectorDestroy);

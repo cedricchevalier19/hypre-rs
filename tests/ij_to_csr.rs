@@ -32,8 +32,10 @@ fn ij_to_csr_conversion_outlives_ij() -> Result<(), Box<dyn std::error::Error>> 
 
         let mut rhs = ctx.ij_vector(&comm, b..e)?;
         rhs.add_elements((b..e).map(|i| (i, 2.0f64)))?;
+        let rhs = rhs.assemble()?;
         let mut x = IJVector::new(&ctx, &comm, b..e)?;
         x.add_elements((b..e).map(|i| (i, 0.0f64)))?;
+        let mut x = x.assemble()?;
 
         let solver = PCGSolver::new(&ctx, &comm, Default::default())?;
         let status = solver.solve(&matrix, &rhs, &mut x)?;

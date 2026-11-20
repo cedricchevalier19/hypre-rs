@@ -13,7 +13,7 @@ use std::fmt;
 use std::fmt::Formatter;
 
 use crate::matrix::{Matrix, SymmetricMatrix};
-use crate::vector::IJVector;
+use crate::vector::ParVector;
 use crate::HypreResult;
 pub use amg::{AMGSolver, AMGSolverConfig, AMGSolverConfigBuilder};
 pub use krylov::{
@@ -61,7 +61,7 @@ impl fmt::Display for IterativeSolverStatus {
 pub trait LinearSolver {
     /// Solves `mat * x = rhs`, starting from the current value of `x`.
     ///
-    /// Assembles `mat`, `rhs` and `x`, so it is collective.
+    /// Collective: every MPI rank of the matrix must call it.
     ///
     /// # Errors
     ///
@@ -71,8 +71,8 @@ pub trait LinearSolver {
     fn solve<M: Matrix + ?Sized>(
         &self,
         mat: &M,
-        rhs: &IJVector<'_>,
-        x: &mut IJVector<'_>,
+        rhs: &ParVector<'_>,
+        x: &mut ParVector<'_>,
     ) -> HypreResult<IterativeSolverStatus>;
 }
 
@@ -98,7 +98,8 @@ pub trait LinearSolver {
 /// // b = A * [1, ..., 1]
 /// let mut b = ctx.ij_vector(&comm, rows.clone())?;
 /// b.add_elements(rows.clone().map(|i| (i, if i < 9 { 1.0 } else { 2.0 })))?;
-/// let mut x = ctx.ij_vector(&comm, rows)?;
+/// let b = b.assemble()?;
+/// let mut x = ctx.ij_vector(&comm, rows)?.assemble()?;
 ///
 /// let config = GMRESSolverConfigBuilder::default().tol(1e-10).build()?;
 /// let solver = Solver::GMRES(ctx.gmres_solver(&comm, config)?);
@@ -132,12 +133,12 @@ pub enum Solver<'h> {
 pub trait SymmetricLinearSolver {
     /// Solves `mat * x = rhs`, starting from the current value of `x`.
     ///
-    /// Assembles `mat`, `rhs` and `x`, so it is collective.
+    /// Collective: every MPI rank of the matrix must call it.
     fn solve<M: Matrix + ?Sized>(
         &self,
         mat: &SymmetricMatrix<M>,
-        rhs: &IJVector<'_>,
-        x: &mut IJVector<'_>,
+        rhs: &ParVector<'_>,
+        x: &mut ParVector<'_>,
     ) -> HypreResult<IterativeSolverStatus>;
 }
 

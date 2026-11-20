@@ -33,7 +33,8 @@
 //!
 //! let mut rhs = ctx.ij_vector(&mpi_comm, rows.clone())?;
 //! rhs.add_elements(rows.clone().map(|i| (i, 1.0)))?;
-//! let mut x = ctx.ij_vector(&mpi_comm, rows)?;
+//! let rhs = rhs.assemble()?;
+//! let mut x = ctx.ij_vector(&mpi_comm, rows)?.assemble()?;
 //!
 //! // CG solver parameters
 //! let my_parameters = PCGSolverConfigBuilder::default()
@@ -77,7 +78,7 @@ pub mod vector;
 type HypreResult<T> = Result<T, error::HypreError>;
 pub use error::HypreError;
 pub use matrix::{Matrix, SymmetricMatrix};
-pub use vector::IJVector;
+pub use vector::{IJVector, ParVector};
 
 mod context;
 pub use context::{initialize, HypreContext};

@@ -5,7 +5,7 @@ use hypre_rs::solvers::{
     BiCGSTABSolverConfigBuilder, COGMRESSolverConfigBuilder, FlexGMRESSolverConfigBuilder,
     GMRESSolverConfigBuilder, LGMRESSolverConfigBuilder, LinearSolver, Solver,
 };
-use hypre_rs::vector::IJVector;
+use hypre_rs::vector::ParVector;
 use hypre_rs::{HypreContext, HypreError, Matrix};
 use mpi::topology::{Communicator, SimpleCommunicator};
 use std::ops::Range;
@@ -89,10 +89,11 @@ fn check_solution(
     rows: Range<u32>,
     solver: &Solver<'_>,
     a: &(impl Matrix + ?Sized),
-    b: &IJVector<'_>,
+    b: &ParVector<'_>,
 ) -> Result<(), Box<dyn std::error::Error>> {
     let mut x = ctx.ij_vector(comm, rows.clone())?;
     x.add_elements(rows.clone().map(|i| (i, 0.0)))?;
+    let mut x = x.assemble()?;
     let status = solver.solve(a, b, &mut x)?;
     assert!(status.converged, "{solver:?}: {status}");
     for (i, v) in rows.clone().zip(x.get_values(rows)?) {
@@ -130,6 +131,7 @@ fn krylov_solvers() -> Result<(), Box<dyn std::error::Error>> {
 
         let mut b = ctx.ij_vector(&comm, rows.clone())?;
         b.add_elements(rows.clone().map(|i| (i, row_sum(i))))?;
+        let b = b.assemble()?;
 
         // Every solver finds the exact solution.
         for solver in solvers(&ctx, &comm, 1e-12, 10 * N as usize)? {
@@ -138,7 +140,7 @@ fn krylov_solvers() -> Result<(), Box<dyn std::error::Error>> {
 
         // Too few iterations: hypre reports a convergence error.
         for solver in solvers(&ctx, &comm, 1e-12, 1)? {
-            let mut x = ctx.ij_vector(&comm, rows.clone())?;
+            let mut x = ctx.ij_vector(&comm, rows.clone())?.assemble()?;
             assert!(
                 matches!(
                     solver.solve(&a, &b, &mut x),
@@ -160,6 +162,7 @@ fn krylov_solvers() -> Result<(), Box<dyn std::error::Error>> {
             rows.clone()
                 .map(|i| (i, if i == 0 || i == N - 1 { 1.0 } else { 0.0 })),
         )?;
+        let b = b.assemble()?;
         let gmres = Solver::GMRES(
             ctx.gmres_solver(
                 &comm,

@@ -43,9 +43,11 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
 
     let mut rhs = ctx.ij_vector(&mpi_comm, local_rows.clone())?;
     rhs.add_elements((local_begin..local_end).map(|i| (i, i as f64)))?;
+    let rhs = rhs.assemble()?;
 
     let mut x = ctx.ij_vector(&mpi_comm, local_rows.clone())?;
     x.add_elements((local_begin..local_end).map(|i| (i, 0f64)))?;
+    let mut x = x.assemble()?;
 
     // CG solver parameters
     let my_parameters = PCGSolverConfigBuilder::default()
