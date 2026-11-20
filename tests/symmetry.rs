@@ -1,16 +1,18 @@
 //! Runtime symmetry check: `Matrix::is_symmetric` and
-//! `TryFrom<Matrix> for SymmetricMatrix`, on any number of MPI ranks.
+//! `TryFrom<IJMatrix | CSRMatrix> for SymmetricMatrix`, on any number of MPI
+//! ranks.
 
 use hypre_rs::matrix::{CSRMatrix, IJMatrix};
-use hypre_rs::solvers::{PCGSolverConfigBuilder, SymmetricLinearSolver, SymmetricSolver};
-use hypre_rs::{HypreContext, HypreError, Matrix, SymmetricMatrix, Vector};
+use hypre_rs::solvers::PCGSolverConfigBuilder;
+use hypre_rs::{HypreContext, HypreError, Matrix, SymmetricMatrix};
 use mpi::topology::{Communicator, SimpleCommunicator};
 use std::ops::Range;
 
 /// Global number of rows; not a multiple of 2 or 3, so ranks get uneven rows.
 const N: u32 = 10;
 
-/// tridiag(-1, 2, -1) with both triangles given, plus `extra` entries. The
+/// tridiag(-1, 2, -1) with both triangles given, plus `extra` entries,
+/// assembled. The
 /// coupling between the first local row and the previous one is added by
 /// this rank to a row owned by the previous rank.
 fn laplacian<'a>(
@@ -18,7 +20,7 @@ fn laplacian<'a>(
     comm: &'a SimpleCommunicator,
     rows: Range<u32>,
     extra: &[(u32, u32, f64)],
-) -> Result<Matrix<'a>, HypreError> {
+) -> Result<CSRMatrix<'a>, HypreError> {
     let mut ij = ctx.ij_matrix(comm, rows.clone(), rows.clone())?;
     for i in rows.clone() {
         ij.add_elements([(i, i, 2.0)].into_iter())?;
@@ -33,7 +35,7 @@ fn laplacian<'a>(
             .copied()
             .filter(|(row, _, _)| rows.contains(row)),
     )?;
-    Ok(Matrix::IJ(ij))
+    ij.assemble()
 }
 
 #[test]
@@ -54,28 +56,27 @@ fn symmetry_check() -> Result<(), Box<dyn std::error::Error>> {
             rows.clone()
                 .map(|i| (i, if i == 0 || i == N - 1 { 1.0 } else { 0.0 })),
         )?;
+        let b = b.assemble()?;
         let mut x = ctx.ij_vector(&comm, rows.clone())?;
         x.add_elements(rows.clone().map(|i| (i, 0.0)))?;
-        let mut x = Vector::IJ(x);
+        let mut x = x.assemble()?;
         let config = PCGSolverConfigBuilder::default()
             .tol(1e-12)
             .max_iters(N as usize)
             .two_norm(true)
             .build()?;
-        let solver = SymmetricSolver::CG(ctx.pcg_solver(&comm, config)?);
-        let status = solver.solve(&a, &Vector::IJ(b), &mut x)?;
+        let solver = ctx.pcg_solver(&comm, config)?;
+        let status = solver.solve(&a, &b, &mut x)?;
         assert!(status.converged, "{status}");
-        let Vector::IJ(x) = &x;
         for (i, v) in rows.clone().zip(x.get_values(rows.clone())?) {
             assert!((v - 1.0).abs() < 1e-8, "x[{i}] = {v}, expected 1");
         }
         drop((a, x, solver));
 
-        // The check also works on the CSR format.
-        let ij = laplacian(&ctx, &comm, rows.clone(), &[])?;
-        assert!(ij.is_symmetric(0.0)?);
-        let Matrix::IJ(ij) = ij else { unreachable!() };
-        let csr = Matrix::ParCSR(CSRMatrix::try_from(ij)?);
+        // `assemble` is the same as `CSRMatrix::try_from`.
+        let mut ij = ctx.ij_matrix(&comm, rows.clone(), rows.clone())?;
+        ij.add_elements(rows.clone().map(|i| (i, i, 2.0)))?;
+        let csr = CSRMatrix::try_from(ij)?;
         assert!(csr.is_symmetric(0.0)?);
         drop(csr);
 
@@ -91,7 +92,7 @@ fn symmetry_check() -> Result<(), Box<dyn std::error::Error>> {
 
         // The unchecked conversion accepts it anyway, and gives it back.
         let m = laplacian(&ctx, &comm, rows.clone(), &[(N - 1, 0, 1.0)])?;
-        let m = Matrix::from(SymmetricMatrix::from_matrix_unchecked(m));
+        let m = SymmetricMatrix::from_matrix_unchecked(m).into_inner();
         assert!(!m.is_symmetric(0.0)?);
         drop(m);
 
@@ -121,16 +122,17 @@ fn symmetry_check() -> Result<(), Box<dyn std::error::Error>> {
         let cols = (2 * rank * N / size)..(2 * (rank + 1) * N / size);
         let mut ij = IJMatrix::new(&ctx, &comm, rows.clone(), cols)?;
         ij.add_elements(rows.clone().map(|i| (i, i, 1.0)))?;
-        assert!(!Matrix::IJ(ij).is_symmetric(0.0)?);
+        assert!(!ij.assemble()?.is_symmetric(0.0)?);
 
-        // A matrix built from its lower triangle is exactly symmetric, and
-        // Matrix methods work on it through Deref.
+        // A matrix built from its lower triangle is exactly symmetric. Once
+        // assembled, it is a Matrix, also as a trait object.
         let mut s = ctx.symmetric_matrix(&comm, rows.clone())?;
         s.add_elements(rows.clone().map(|i| (i, i, 2.0)))?;
         s.add_elements(rows.clone().filter(|&i| i > 0).map(|i| (i, i - 1, -1.0)))?;
         s.add_elements(rows.clone().filter(|&i| i >= 3).map(|i| (i, i - 3, 0.25)))?;
+        let s = s.assemble()?;
         assert!(s.is_symmetric(0.0)?);
-        let as_matrix: &Matrix<'_> = &s;
+        let as_matrix: &dyn Matrix = &s;
         assert!(as_matrix.is_symmetric(0.0)?);
         drop(s);
 

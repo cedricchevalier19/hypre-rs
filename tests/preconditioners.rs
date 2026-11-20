@@ -1,15 +1,17 @@
 //! Preconditioned Krylov solvers, on any number of MPI ranks.
 
+use hypre_rs::matrix::CSRMatrix;
 use hypre_rs::preconditioners::{
     AMGPreconditionerConfigBuilder, JacobiPreconditioner, Preconditioner,
     SymmetricAMGPreconditionerConfigBuilder, SymmetricPreconditioner, SymmetricSmoother,
 };
 use hypre_rs::solvers::{
     BiCGSTABSolverConfigBuilder, COGMRESSolverConfigBuilder, FlexGMRESSolverConfigBuilder,
-    GMRESSolverConfigBuilder, IterativeSolverStatus, LGMRESSolverConfigBuilder, LinearSolver,
-    PCGSolverConfigBuilder, Solver, SymmetricLinearSolver, SymmetricSolver,
+    GMRESSolverConfigBuilder, IterativeSolverStatus, LGMRESSolverConfigBuilder,
+    PCGSolverConfigBuilder, Solver,
 };
-use hypre_rs::{HypreContext, HypreError, Matrix, Vector};
+use hypre_rs::vector::ParVector;
+use hypre_rs::{HypreContext, HypreError, SymmetricMatrix};
 use mpi::topology::{Communicator, SimpleCommunicator};
 use std::ops::Range;
 
@@ -23,21 +25,20 @@ const UPPER: f64 = -0.5;
 
 type TestResult<T = ()> = Result<T, Box<dyn std::error::Error>>;
 
-/// The vector whose entry `i` is `f(i)`.
+/// The assembled vector whose entry `i` is `f(i)`.
 fn vector<'a>(
     ctx: &'a HypreContext<'_>,
     comm: &'a SimpleCommunicator,
     rows: Range<u32>,
     f: impl Fn(u32) -> f64,
-) -> Result<Vector<'a>, HypreError> {
+) -> Result<ParVector<'a>, HypreError> {
     let mut v = ctx.ij_vector(comm, rows.clone())?;
     v.add_elements(rows.map(|i| (i, f(i))))?;
-    Ok(Vector::IJ(v))
+    v.assemble()
 }
 
 /// Checks that `x = [1, ..., 1]`.
-fn check_ones(x: &Vector<'_>, rows: Range<u32>, what: &str) -> TestResult {
-    let Vector::IJ(x) = x;
+fn check_ones(x: &ParVector<'_>, rows: Range<u32>, what: &str) -> TestResult {
     for (i, v) in rows.clone().zip(x.get_values(rows)?) {
         assert!((v - 1.0).abs() < 1e-6, "{what}: x[{i}] = {v}, expected 1");
     }
@@ -49,7 +50,7 @@ fn cg(
     ctx: &HypreContext<'_>,
     comm: &SimpleCommunicator,
     rows: Range<u32>,
-    a: &hypre_rs::SymmetricMatrix<'_>,
+    a: &SymmetricMatrix<CSRMatrix<'_>>,
     preconditioner: Option<SymmetricPreconditioner<'_>>,
 ) -> TestResult<IterativeSolverStatus> {
     let what = format!("CG with {preconditioner:?}");
@@ -61,7 +62,6 @@ fn cg(
     if let Some(p) = preconditioner {
         solver = solver.with_preconditioner(p)?;
     }
-    let solver = SymmetricSolver::CG(solver);
     let b = vector(ctx, comm, rows.clone(), |i| {
         if i == 0 || i == N - 1 {
             1.0
@@ -84,60 +84,55 @@ fn general_solvers<'a>(
 ) -> Result<Vec<Solver<'a>>, HypreError> {
     let (tol, max_iters) = (1e-12, 10 * N as usize);
     Ok(vec![
-        Solver::GMRES(
-            ctx.gmres_solver(
-                comm,
-                GMRESSolverConfigBuilder::default()
-                    .tol(tol)
-                    .max_iters(max_iters)
-                    .k_dim(20usize)
-                    .build()?,
-            )?
-            .with_preconditioner(make()?)?,
-        ),
-        Solver::FlexGMRES(
-            ctx.flex_gmres_solver(
-                comm,
-                FlexGMRESSolverConfigBuilder::default()
-                    .tol(tol)
-                    .max_iters(max_iters)
-                    .k_dim(20usize)
-                    .build()?,
-            )?
-            .with_preconditioner(make()?)?,
-        ),
-        Solver::LGMRES(
-            ctx.lgmres_solver(
-                comm,
-                LGMRESSolverConfigBuilder::default()
-                    .tol(tol)
-                    .max_iters(max_iters)
-                    .k_dim(20usize)
-                    .build()?,
-            )?
-            .with_preconditioner(make()?)?,
-        ),
-        Solver::COGMRES(
-            ctx.cogmres_solver(
-                comm,
-                COGMRESSolverConfigBuilder::default()
-                    .tol(tol)
-                    .max_iters(max_iters)
-                    .k_dim(20usize)
-                    .build()?,
-            )?
-            .with_preconditioner(make()?)?,
-        ),
-        Solver::BiCGSTAB(
-            ctx.bicgstab_solver(
-                comm,
-                BiCGSTABSolverConfigBuilder::default()
-                    .tol(tol)
-                    .max_iters(max_iters)
-                    .build()?,
-            )?
-            .with_preconditioner(make()?)?,
-        ),
+        ctx.gmres_solver(
+            comm,
+            GMRESSolverConfigBuilder::default()
+                .tol(tol)
+                .max_iters(max_iters)
+                .k_dim(20usize)
+                .build()?,
+        )?
+        .with_preconditioner(make()?)?
+        .into(),
+        ctx.flex_gmres_solver(
+            comm,
+            FlexGMRESSolverConfigBuilder::default()
+                .tol(tol)
+                .max_iters(max_iters)
+                .k_dim(20usize)
+                .build()?,
+        )?
+        .with_preconditioner(make()?)?
+        .into(),
+        ctx.lgmres_solver(
+            comm,
+            LGMRESSolverConfigBuilder::default()
+                .tol(tol)
+                .max_iters(max_iters)
+                .k_dim(20usize)
+                .build()?,
+        )?
+        .with_preconditioner(make()?)?
+        .into(),
+        ctx.cogmres_solver(
+            comm,
+            COGMRESSolverConfigBuilder::default()
+                .tol(tol)
+                .max_iters(max_iters)
+                .k_dim(20usize)
+                .build()?,
+        )?
+        .with_preconditioner(make()?)?
+        .into(),
+        ctx.bicgstab_solver(
+            comm,
+            BiCGSTABSolverConfigBuilder::default()
+                .tol(tol)
+                .max_iters(max_iters)
+                .build()?,
+        )?
+        .with_preconditioner(make()?)?
+        .into(),
     ])
 }
 
@@ -156,6 +151,7 @@ fn preconditioners() -> TestResult {
         let mut a = ctx.symmetric_matrix(&comm, rows.clone())?;
         a.add_elements(rows.clone().map(|i| (i, i, 2.0)))?;
         a.add_elements(rows.clone().filter(|&i| i > 0).map(|i| (i, i - 1, -1.0)))?;
+        let a = a.assemble()?;
 
         let plain = cg(&ctx, &comm, rows.clone(), &a, None)?;
         cg(
@@ -245,7 +241,7 @@ fn preconditioners() -> TestResult {
                 ij.add_elements([(i, i + 1, UPPER)].into_iter())?;
             }
         }
-        let a = Matrix::IJ(ij);
+        let a = ij.assemble()?;
         // A * [1, ..., 1]
         let b = vector(&ctx, &comm, rows.clone(), |i| {
             2.0 + if i > 0 { LOWER } else { 0.0 } + if i + 1 < N { UPPER } else { 0.0 }

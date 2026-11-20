@@ -1,6 +1,5 @@
 extern crate hypre_rs;
-use hypre_rs::solvers::{PCGSolverConfigBuilder, SymmetricLinearSolver, SymmetricSolver};
-use hypre_rs::Vector;
+use hypre_rs::solvers::PCGSolverConfigBuilder;
 use mpi::topology::Communicator;
 
 fn main() -> Result<(), Box<dyn std::error::Error>> {
@@ -39,11 +38,16 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
         nnz_buffer.clear();
     }
 
+    // Solvers need an assembled matrix; it cannot be modified afterwards.
+    let matrix = matrix.assemble()?;
+
     let mut rhs = ctx.ij_vector(&mpi_comm, local_rows.clone())?;
     rhs.add_elements((local_begin..local_end).map(|i| (i, i as f64)))?;
+    let rhs = rhs.assemble()?;
 
     let mut x = ctx.ij_vector(&mpi_comm, local_rows.clone())?;
     x.add_elements((local_begin..local_end).map(|i| (i, 0f64)))?;
+    let mut x = x.assemble()?;
 
     // CG solver parameters
     let my_parameters = PCGSolverConfigBuilder::default()
@@ -54,15 +58,13 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
         .build()?;
 
     // Create new CG solver with previous parameters
-    let solver = SymmetricSolver::CG(ctx.pcg_solver(&mpi_comm, my_parameters)?);
+    let solver = ctx.pcg_solver(&mpi_comm, my_parameters)?;
 
-    let c_rhs = Vector::IJ(rhs);
-    let mut c_x = Vector::IJ(x);
-    let info = solver.solve(&matrix, &c_rhs, &mut c_x)?;
+    let info = solver.solve(&matrix, &rhs, &mut x)?;
     println!("Solver has converged: {}", info);
 
     // hypre objects must be dropped before hypre is finalized (checked by the compiler)
-    drop((solver, matrix, c_rhs, c_x));
+    drop((solver, matrix, rhs, x));
     ctx.finalize()?;
     Ok(())
 }

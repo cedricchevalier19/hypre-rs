@@ -154,7 +154,7 @@ impl HypreContext<'_> {
         &'a self,
         comm: &'a impl Communicator,
         rows: Range<u32>,
-    ) -> HypreResult<SymmetricMatrix<'a>> {
+    ) -> HypreResult<SymmetricMatrix<IJMatrix<'a>>> {
         SymmetricMatrix::new(self, comm, rows)
     }
 

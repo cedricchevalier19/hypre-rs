@@ -13,7 +13,8 @@ use std::fmt;
 use std::fmt::Formatter;
 
 use crate::matrix::{Matrix, SymmetricMatrix};
-use crate::{HypreResult, Vector};
+use crate::vector::ParVector;
+use crate::HypreResult;
 pub use amg::{AMGSolver, AMGSolverConfig, AMGSolverConfigBuilder};
 pub use krylov::{
     BiCGSTABSolver, BiCGSTABSolverConfig, BiCGSTABSolverConfigBuilder, COGMRESSolver,
@@ -54,36 +55,38 @@ impl fmt::Display for IterativeSolverStatus {
 
 /// Solver for general linear systems.
 ///
-/// A [SymmetricMatrix] is a [Matrix] (it dereferences to one), so these
-/// solvers also accept `&symmetric_matrix`.
+/// They accept any [Matrix], including a [SymmetricMatrix] and, when the
+/// storage is chosen at runtime, a `&dyn Matrix`.
 #[enum_dispatch]
 pub trait LinearSolver {
     /// Solves `mat * x = rhs`, starting from the current value of `x`.
     ///
-    /// Assembles `mat`, `rhs` and `x`, so it is collective.
+    /// Collective: every MPI rank of the matrix must call it.
     ///
     /// # Errors
     ///
     /// [HypreError::HypreConvError](crate::HypreError::HypreConvError) if
     /// the solver did not converge within its maximum number of iterations,
     /// or another error returned by hypre.
-    fn solve(
+    fn solve<M: Matrix + ?Sized>(
         &self,
-        mat: &Matrix<'_>,
-        rhs: &Vector<'_>,
-        x: &mut Vector<'_>,
+        mat: &M,
+        rhs: &ParVector<'_>,
+        x: &mut ParVector<'_>,
     ) -> HypreResult<IterativeSolverStatus>;
 }
 
 /// Solvers for general matrices, chosen at runtime.
+///
+/// Only needed when the solver is chosen at runtime: every solver has its own
+/// `solve` method. Each solver type converts into its variant with `into()`.
 ///
 /// # Example
 ///
 /// ```
 /// # fn main() -> Result<(), Box<dyn std::error::Error>> {
 /// # use mpi::topology::Communicator;
-/// use hypre_rs::solvers::{GMRESSolverConfigBuilder, LinearSolver, Solver};
-/// use hypre_rs::{Matrix, Vector};
+/// use hypre_rs::solvers::{GMRESSolverConfigBuilder, Solver};
 /// # let universe = mpi::initialize().ok_or("MPI was already initialized (or finalized) in this process")?;
 /// # let comm = universe.world();
 /// # let ctx = hypre_rs::initialize(&universe)?;
@@ -93,16 +96,22 @@ pub trait LinearSolver {
 /// let mut a = ctx.ij_matrix(&comm, rows.clone(), rows.clone())?;
 /// a.add_elements(rows.clone().map(|i| (i, i, 2.0)))?;
 /// a.add_elements(rows.clone().filter(|&i| i < 9).map(|i| (i, i + 1, -1.0)))?;
-/// let a = Matrix::IJ(a);
+/// let a = a.assemble()?;
 ///
 /// // b = A * [1, ..., 1]
 /// let mut b = ctx.ij_vector(&comm, rows.clone())?;
 /// b.add_elements(rows.clone().map(|i| (i, if i < 9 { 1.0 } else { 2.0 })))?;
-/// let b = Vector::IJ(b);
-/// let mut x = Vector::IJ(ctx.ij_vector(&comm, rows)?);
+/// let b = b.assemble()?;
+/// let mut x = ctx.ij_vector(&comm, rows)?.assemble()?;
 ///
-/// let config = GMRESSolverConfigBuilder::default().tol(1e-10).build()?;
-/// let solver = Solver::GMRES(ctx.gmres_solver(&comm, config)?);
+/// // For example from a configuration file.
+/// let use_bicgstab = false;
+/// let solver: Solver<'_> = if use_bicgstab {
+///     ctx.bicgstab_solver(&comm, Default::default())?.into()
+/// } else {
+///     let config = GMRESSolverConfigBuilder::default().tol(1e-10).build()?;
+///     ctx.gmres_solver(&comm, config)?.into()
+/// };
 /// let status = solver.solve(&a, &b, &mut x)?;
 /// assert!(status.converged);
 /// # drop((solver, a, b, x));
@@ -128,24 +137,61 @@ pub enum Solver<'h> {
     AMG(AMGSolver<'h>),
 }
 
+impl Solver<'_> {
+    /// Solves `mat * x = rhs` with the chosen solver; same as
+    /// [LinearSolver::solve], without importing the trait.
+    ///
+    /// # Errors
+    ///
+    /// See [LinearSolver::solve].
+    pub fn solve<M: Matrix + ?Sized>(
+        &self,
+        mat: &M,
+        rhs: &ParVector<'_>,
+        x: &mut ParVector<'_>,
+    ) -> HypreResult<IterativeSolverStatus> {
+        LinearSolver::solve(self, mat, rhs, x)
+    }
+}
+
 /// Solver for linear systems whose matrix is symmetric.
 #[enum_dispatch]
 pub trait SymmetricLinearSolver {
     /// Solves `mat * x = rhs`, starting from the current value of `x`.
     ///
-    /// Assembles `mat`, `rhs` and `x`, so it is collective.
-    fn solve(
+    /// Collective: every MPI rank of the matrix must call it.
+    fn solve<M: Matrix + ?Sized>(
         &self,
-        mat: &SymmetricMatrix<'_>,
-        rhs: &Vector<'_>,
-        x: &mut Vector<'_>,
+        mat: &SymmetricMatrix<M>,
+        rhs: &ParVector<'_>,
+        x: &mut ParVector<'_>,
     ) -> HypreResult<IterativeSolverStatus>;
 }
 
 /// Solvers for symmetric matrices, chosen at runtime.
+///
+/// Only needed when the solver is chosen at runtime: every solver has its own
+/// `solve` method. Each solver type converts into its variant with `into()`.
 #[enum_dispatch(SymmetricLinearSolver)]
 #[derive(Debug)]
 pub enum SymmetricSolver<'h> {
     /// Conjugate Gradient, for symmetric positive definite matrices.
     CG(PCGSolver<'h>),
+}
+
+impl SymmetricSolver<'_> {
+    /// Solves `mat * x = rhs` with the chosen solver; same as
+    /// [SymmetricLinearSolver::solve], without importing the trait.
+    ///
+    /// # Errors
+    ///
+    /// See [SymmetricLinearSolver::solve].
+    pub fn solve<M: Matrix + ?Sized>(
+        &self,
+        mat: &SymmetricMatrix<M>,
+        rhs: &ParVector<'_>,
+        x: &mut ParVector<'_>,
+    ) -> HypreResult<IterativeSolverStatus> {
+        SymmetricLinearSolver::solve(self, mat, rhs, x)
+    }
 }

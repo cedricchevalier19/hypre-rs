@@ -6,9 +6,8 @@ use std::marker::PhantomData;
 use std::ptr::null_mut;
 
 use crate::error::HypreError;
-use crate::matrix::Matrix;
 use crate::solvers::{IterativeSolverStatus, LinearSolver};
-use crate::{HypreContext, HypreResult, Vector};
+use crate::{HypreContext, HypreResult};
 use hypre_sys::*;
 
 #[cfg(test)]
@@ -33,8 +32,7 @@ hypre_solver! {
     /// ```
     /// # fn main() -> Result<(), Box<dyn std::error::Error>> {
     /// # use mpi::topology::Communicator;
-    /// use hypre_rs::solvers::{AMGSolverConfigBuilder, LinearSolver, Solver};
-    /// use hypre_rs::Vector;
+    /// use hypre_rs::solvers::AMGSolverConfigBuilder;
     ///
     /// # let universe = mpi::initialize().ok_or("MPI was already initialized (or finalized) in this process")?;
     /// # let comm = universe.world();
@@ -46,17 +44,19 @@ hypre_solver! {
     /// let mut a = ctx.symmetric_matrix(&comm, rows.clone())?;
     /// a.add_elements(rows.clone().map(|i| (i, i, 2.0)))?;
     /// a.add_elements(rows.clone().filter(|&i| i > 0).map(|i| (i, i - 1, -1.0)))?;
+    /// let a = a.assemble()?;
     /// let mut b = ctx.ij_vector(&comm, rows.clone())?;
     /// b.add_elements(rows.clone().map(|i| (i, 1.0)))?;
+    /// let b = b.assemble()?;
     /// let mut x = ctx.ij_vector(&comm, rows.clone())?;
     /// x.add_elements(rows.clone().map(|i| (i, 0.0)))?;
-    /// let (b, mut x) = (Vector::IJ(b), Vector::IJ(x));
+    /// let mut x = x.assemble()?;
     ///
     /// let config = AMGSolverConfigBuilder::default()
     ///     .tol(1e-10)
     ///     .max_iters(100usize)
     ///     .build()?;
-    /// let solver = Solver::AMG(ctx.amg_solver(&comm, config)?);
+    /// let solver = ctx.amg_solver(&comm, config)?;
     /// let status = solver.solve(&a, &b, &mut x)?;
     /// assert!(status.converged);
     /// # drop((solver, a, b, x));
@@ -77,7 +77,7 @@ hypre_solver! {
     config AMGSolverConfig, AMGSolverConfigBuilder;
     create boomer_amg_create, destroy HYPRE_BoomerAMGDestroy;
     setup HYPRE_BoomerAMGSetup, solve HYPRE_BoomerAMGSolve;
-    solves LinearSolver for Matrix;
+    solves LinearSolver for M;
     status HYPRE_BoomerAMGGetNumIterations, HYPRE_BoomerAMGGetFinalRelativeResidualNorm;
     positive [tol, strong_threshold, max_row_sum, trunc_factor];
     params {

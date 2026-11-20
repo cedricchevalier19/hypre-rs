@@ -33,8 +33,6 @@ pub enum HypreError {
     NotLowerTriangular,
     #[error("Matrix is not symmetric")]
     NotSymmetric,
-    #[error("Operation requires a matrix in IJ format")]
-    NotIJMatrix,
     #[error(transparent)]
     ConversionError(#[from] TryFromIntError),
     #[error(transparent)]

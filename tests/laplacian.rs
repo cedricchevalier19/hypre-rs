@@ -1,8 +1,8 @@
 //! Solves a 1D Laplacian whose exact solution is known, and checks the
 //! values of the solution, not just that the solver converged.
 
-use hypre_rs::solvers::{PCGSolverConfigBuilder, SymmetricLinearSolver, SymmetricSolver};
-use hypre_rs::{HypreError, Vector};
+use hypre_rs::solvers::PCGSolverConfigBuilder;
+use hypre_rs::HypreError;
 use mpi::topology::Communicator;
 
 /// Global number of rows; not a multiple of 2 or 3, so ranks get uneven rows.
@@ -32,24 +32,25 @@ fn laplacian_solution_values() -> Result<(), Box<dyn std::error::Error>> {
             entries.push((i, i, 2.0));
         }
         a.add_elements(entries.into_iter())?;
+        let a = a.assemble()?;
 
         let mut b = ctx.ij_vector(&comm, rows.clone())?;
         b.add_elements(
             rows.clone()
                 .map(|i| (i, if i == 0 || i == N - 1 { 1.0 } else { 0.0 })),
         )?;
-        let b = Vector::IJ(b);
+        let b = b.assemble()?;
 
         let mut x = ctx.ij_vector(&comm, rows.clone())?;
         x.add_elements(rows.clone().map(|i| (i, 0.0)))?;
-        let mut x = Vector::IJ(x);
+        let mut x = x.assemble()?;
 
         // Too few iterations: hypre reports a convergence error.
         let config = PCGSolverConfigBuilder::default()
             .tol(1e-12)
             .max_iters(1usize)
             .build()?;
-        let solver = SymmetricSolver::CG(ctx.pcg_solver(&comm, config)?);
+        let solver = ctx.pcg_solver(&comm, config)?;
         assert!(matches!(
             solver.solve(&a, &b, &mut x),
             Err(HypreError::HypreConvError)
@@ -62,11 +63,10 @@ fn laplacian_solution_values() -> Result<(), Box<dyn std::error::Error>> {
             .max_iters(N as usize)
             .two_norm(true)
             .build()?;
-        let solver = SymmetricSolver::CG(ctx.pcg_solver(&comm, config)?);
+        let solver = ctx.pcg_solver(&comm, config)?;
         let status = solver.solve(&a, &b, &mut x)?;
         assert!(status.converged, "{status}");
 
-        let Vector::IJ(x) = &x;
         let values = x.get_values(rows.clone())?;
         assert_eq!(values.len(), rows.len());
         for (i, v) in rows.zip(values) {

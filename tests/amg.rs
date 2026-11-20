@@ -1,7 +1,8 @@
 //! The algebraic multigrid solver (BoomerAMG), on any number of MPI ranks.
 
-use hypre_rs::solvers::{AMGSolver, AMGSolverConfigBuilder, LinearSolver, Solver};
-use hypre_rs::{HypreContext, HypreError, Matrix, Vector};
+use hypre_rs::solvers::{AMGSolver, AMGSolverConfigBuilder};
+use hypre_rs::vector::ParVector;
+use hypre_rs::{HypreContext, HypreError, Matrix};
 use mpi::topology::{Communicator, SimpleCommunicator};
 use std::ops::Range;
 
@@ -14,10 +15,11 @@ fn rhs<'a>(
     ctx: &'a HypreContext<'_>,
     comm: &'a SimpleCommunicator,
     rows: Range<u32>,
-) -> Result<Vector<'a>, HypreError> {
+) -> Result<ParVector<'a>, HypreError> {
     let mut b = ctx.ij_vector(comm, rows.clone())?;
     b.add_elements(rows.map(|i| (i, if i == 0 || i == N - 1 { 1.0 } else { 0.0 })))?;
-    Ok(Vector::IJ(b))
+    let b = b.assemble()?;
+    Ok(b)
 }
 
 /// Solves `a * x = b` from `x = 0` and checks that `x = [1, ..., 1]`.
@@ -25,17 +27,16 @@ fn check_solution(
     ctx: &HypreContext<'_>,
     comm: &SimpleCommunicator,
     rows: Range<u32>,
-    solver: &Solver<'_>,
-    a: &Matrix<'_>,
-    b: &Vector<'_>,
+    solver: &AMGSolver<'_>,
+    a: &(impl Matrix + ?Sized),
+    b: &ParVector<'_>,
 ) -> Result<(), Box<dyn std::error::Error>> {
     let mut x = ctx.ij_vector(comm, rows.clone())?;
     x.add_elements(rows.clone().map(|i| (i, 0.0)))?;
-    let mut x = Vector::IJ(x);
+    let mut x = x.assemble()?;
     let status = solver.solve(a, b, &mut x)?;
     assert!(status.converged, "{status}");
     assert!(status.res_num <= 1e-10, "{status}");
-    let Vector::IJ(x) = &x;
     for (i, v) in rows.clone().zip(x.get_values(rows)?) {
         assert!((v - 1.0).abs() < 1e-6, "x[{i}] = {v}, expected 1");
     }
@@ -53,10 +54,11 @@ fn amg_solver() -> Result<(), Box<dyn std::error::Error>> {
         let (rank, size) = (comm.rank() as u32, comm.size() as u32);
         let rows = (rank * N / size)..((rank + 1) * N / size);
 
-        // The 1D Laplacian, as a SymmetricMatrix: AMG accepts it through Deref.
+        // The 1D Laplacian, as a SymmetricMatrix: every solver accepts it.
         let mut a = ctx.symmetric_matrix(&comm, rows.clone())?;
         a.add_elements(rows.clone().map(|i| (i, i, 2.0)))?;
         a.add_elements(rows.clone().filter(|&i| i > 0).map(|i| (i, i - 1, -1.0)))?;
+        let a = a.assemble()?;
         let b = rhs(&ctx, &comm, rows.clone())?;
 
         // Default AMG setup, and a few common variations.
@@ -74,7 +76,7 @@ fn amg_solver() -> Result<(), Box<dyn std::error::Error>> {
         ];
         for mut config in configs {
             let config = config.tol(1e-10).max_iters(100usize).build()?;
-            let solver = Solver::AMG(ctx.amg_solver(&comm, config)?);
+            let solver = ctx.amg_solver(&comm, config)?;
             check_solution(&ctx, &comm, rows.clone(), &solver, &a, &b)?;
         }
 
@@ -83,8 +85,8 @@ fn amg_solver() -> Result<(), Box<dyn std::error::Error>> {
             .tol(1e-10)
             .max_iters(1usize)
             .build()?;
-        let solver = Solver::AMG(ctx.amg_solver(&comm, config)?);
-        let mut x = Vector::IJ(ctx.ij_vector(&comm, rows.clone())?);
+        let solver = ctx.amg_solver(&comm, config)?;
+        let mut x = ctx.ij_vector(&comm, rows.clone())?.assemble()?;
         assert!(matches!(
             solver.solve(&a, &b, &mut x),
             Err(HypreError::HypreConvError)

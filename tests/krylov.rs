@@ -3,9 +3,10 @@
 
 use hypre_rs::solvers::{
     BiCGSTABSolverConfigBuilder, COGMRESSolverConfigBuilder, FlexGMRESSolverConfigBuilder,
-    GMRESSolverConfigBuilder, LGMRESSolverConfigBuilder, LinearSolver, Solver,
+    GMRESSolverConfigBuilder, LGMRESSolverConfigBuilder, Solver,
 };
-use hypre_rs::{HypreContext, HypreError, Matrix, Vector};
+use hypre_rs::vector::ParVector;
+use hypre_rs::{HypreContext, HypreError, Matrix};
 use mpi::topology::{Communicator, SimpleCommunicator};
 use std::ops::Range;
 
@@ -30,54 +31,49 @@ fn solvers<'a>(
     max_iters: usize,
 ) -> Result<Vec<Solver<'a>>, HypreError> {
     Ok(vec![
-        Solver::GMRES(
-            ctx.gmres_solver(
-                comm,
-                GMRESSolverConfigBuilder::default()
-                    .tol(tol)
-                    .max_iters(max_iters)
-                    .k_dim(10usize)
-                    .build()?,
-            )?,
-        ),
-        Solver::FlexGMRES(
-            ctx.flex_gmres_solver(
-                comm,
-                FlexGMRESSolverConfigBuilder::default()
-                    .tol(tol)
-                    .max_iters(max_iters)
-                    .build()?,
-            )?,
-        ),
-        Solver::LGMRES(
-            ctx.lgmres_solver(
-                comm,
-                LGMRESSolverConfigBuilder::default()
-                    .tol(tol)
-                    .max_iters(max_iters)
-                    .k_dim(10usize)
-                    .aug_dim(2usize)
-                    .build()?,
-            )?,
-        ),
-        Solver::COGMRES(
-            ctx.cogmres_solver(
-                comm,
-                COGMRESSolverConfigBuilder::default()
-                    .tol(tol)
-                    .max_iters(max_iters)
-                    .build()?,
-            )?,
-        ),
-        Solver::BiCGSTAB(
-            ctx.bicgstab_solver(
-                comm,
-                BiCGSTABSolverConfigBuilder::default()
-                    .tol(tol)
-                    .max_iters(max_iters)
-                    .build()?,
-            )?,
-        ),
+        ctx.gmres_solver(
+            comm,
+            GMRESSolverConfigBuilder::default()
+                .tol(tol)
+                .max_iters(max_iters)
+                .k_dim(10usize)
+                .build()?,
+        )?
+        .into(),
+        ctx.flex_gmres_solver(
+            comm,
+            FlexGMRESSolverConfigBuilder::default()
+                .tol(tol)
+                .max_iters(max_iters)
+                .build()?,
+        )?
+        .into(),
+        ctx.lgmres_solver(
+            comm,
+            LGMRESSolverConfigBuilder::default()
+                .tol(tol)
+                .max_iters(max_iters)
+                .k_dim(10usize)
+                .aug_dim(2usize)
+                .build()?,
+        )?
+        .into(),
+        ctx.cogmres_solver(
+            comm,
+            COGMRESSolverConfigBuilder::default()
+                .tol(tol)
+                .max_iters(max_iters)
+                .build()?,
+        )?
+        .into(),
+        ctx.bicgstab_solver(
+            comm,
+            BiCGSTABSolverConfigBuilder::default()
+                .tol(tol)
+                .max_iters(max_iters)
+                .build()?,
+        )?
+        .into(),
     ])
 }
 
@@ -87,15 +83,14 @@ fn check_solution(
     comm: &SimpleCommunicator,
     rows: Range<u32>,
     solver: &Solver<'_>,
-    a: &Matrix<'_>,
-    b: &Vector<'_>,
+    a: &(impl Matrix + ?Sized),
+    b: &ParVector<'_>,
 ) -> Result<(), Box<dyn std::error::Error>> {
     let mut x = ctx.ij_vector(comm, rows.clone())?;
     x.add_elements(rows.clone().map(|i| (i, 0.0)))?;
-    let mut x = Vector::IJ(x);
+    let mut x = x.assemble()?;
     let status = solver.solve(a, b, &mut x)?;
     assert!(status.converged, "{solver:?}: {status}");
-    let Vector::IJ(x) = &x;
     for (i, v) in rows.clone().zip(x.get_values(rows)?) {
         assert!(
             (v - 1.0).abs() < 1e-6,
@@ -126,12 +121,12 @@ fn krylov_solvers() -> Result<(), Box<dyn std::error::Error>> {
                 ij.add_elements([(i, i + 1, UPPER)].into_iter())?;
             }
         }
-        let a = Matrix::IJ(ij);
+        let a = ij.assemble()?;
         assert!(!a.is_symmetric(0.0)?);
 
         let mut b = ctx.ij_vector(&comm, rows.clone())?;
         b.add_elements(rows.clone().map(|i| (i, row_sum(i))))?;
-        let b = Vector::IJ(b);
+        let b = b.assemble()?;
 
         // Every solver finds the exact solution.
         for solver in solvers(&ctx, &comm, 1e-12, 10 * N as usize)? {
@@ -140,7 +135,7 @@ fn krylov_solvers() -> Result<(), Box<dyn std::error::Error>> {
 
         // Too few iterations: hypre reports a convergence error.
         for solver in solvers(&ctx, &comm, 1e-12, 1)? {
-            let mut x = Vector::IJ(ctx.ij_vector(&comm, rows.clone())?);
+            let mut x = ctx.ij_vector(&comm, rows.clone())?.assemble()?;
             assert!(
                 matches!(
                     solver.solve(&a, &b, &mut x),
@@ -156,22 +151,23 @@ fn krylov_solvers() -> Result<(), Box<dyn std::error::Error>> {
         let mut s = ctx.symmetric_matrix(&comm, rows.clone())?;
         s.add_elements(rows.clone().map(|i| (i, i, 2.0)))?;
         s.add_elements(rows.clone().filter(|&i| i > 0).map(|i| (i, i - 1, -1.0)))?;
+        let s = s.assemble()?;
         let mut b = ctx.ij_vector(&comm, rows.clone())?;
         b.add_elements(
             rows.clone()
                 .map(|i| (i, if i == 0 || i == N - 1 { 1.0 } else { 0.0 })),
         )?;
-        let b = Vector::IJ(b);
-        let gmres = Solver::GMRES(
-            ctx.gmres_solver(
+        let b = b.assemble()?;
+        let gmres: Solver<'_> = ctx
+            .gmres_solver(
                 &comm,
                 GMRESSolverConfigBuilder::default()
                     // Without restarts, GMRES converges in at most N iterations.
                     .k_dim(N as usize)
                     .tol(1e-12)
                     .build()?,
-            )?,
-        );
+            )?
+            .into();
         check_solution(&ctx, &comm, rows.clone(), &gmres, &s, &b)?;
     }
     // hypre objects must be dropped before hypre is finalized (checked by the compiler)
