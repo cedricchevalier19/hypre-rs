@@ -8,12 +8,16 @@ use std::marker::PhantomData;
 use std::ops::Range;
 
 mod builder;
+mod refill;
 pub use builder::{DistributedVectorBuilder, LocalVectorBuilder};
+pub use refill::VectorRefillBuilder;
 
 /// Assembled distributed vector, which hypre's solvers use; made by a
 /// [LocalVectorBuilder] or a [DistributedVectorBuilder], or directly by
 /// [ParVector::zeros] and [ParVector::from_fn]. It cannot be modified,
-/// except by a solver writing its solution into it.
+/// except by a solver writing its solution into it, but its values can be
+/// replaced: [ParVector::refill] and [ParVector::update] turn it into a
+/// [VectorRefillBuilder].
 ///
 /// Not `Clone`: copying the handle would destroy it twice.
 ///
@@ -41,7 +45,10 @@ pub use builder::{DistributedVectorBuilder, LocalVectorBuilder};
 /// ```
 #[derive(Debug)]
 pub struct ParVector<'h> {
-    internal: HYPRE_ParVector,
+    /// hypre's IJ interface, kept to refill the values; destroying it also
+    /// destroys `par`.
+    ij: HYPRE_IJVector,
+    par: HYPRE_ParVector,
     /// Rows owned by this MPI rank.
     rows: Range<u32>,
     _hypre: PhantomData<&'h ()>,
@@ -140,7 +147,7 @@ impl<'h> ParVector<'h> {
         let mut values: Vec<HYPRE_Complex> = vec![Default::default(); indices.len()];
         unsafe {
             check_hypre!(HYPRE_ParVectorGetValues(
-                self.internal,
+                self.par,
                 indices.len().try_into()?,
                 indices.as_mut_ptr(),
                 values.as_mut_ptr(),
@@ -151,8 +158,8 @@ impl<'h> ParVector<'h> {
 
     /// The ParVector object, for hypre's solvers.
     pub(crate) fn as_raw(&self) -> HYPRE_ParVector {
-        self.internal
+        self.par
     }
 }
 
-impl_hypre_drop!(ParVector<'_>, internal, HYPRE_ParVectorDestroy);
+impl_hypre_drop!(ParVector<'_>, ij, HYPRE_IJVectorDestroy);

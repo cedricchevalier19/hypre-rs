@@ -84,57 +84,61 @@ impl<'h> IjMatrix<'h> {
         Ok(())
     }
 
-    /// Adds (with `HYPRE_IJMatrixAddToValues`) or sets (with
-    /// `HYPRE_IJMatrixSetValues`, local rows only) every entry.
     fn insert(&mut self, entries: &[Entry], add: bool) -> HypreResult<()> {
-        let rows: Vec<HYPRE_BigInt> = entries.iter().map(|e| e.0).collect();
-        let cols: Vec<HYPRE_BigInt> = entries.iter().map(|e| e.1).collect();
-        let values: Vec<HYPRE_Complex> = entries.iter().map(|e| e.2).collect();
-        // One column per "row" entry: hypre reads entry k as
-        // (rows[k], cols[k], values[k]).
-        let mut ncols = vec![1 as HYPRE_Int; rows.len()];
-        let n = rows.len().try_into()?;
-        unsafe {
-            if add {
-                check_hypre!(HYPRE_IJMatrixAddToValues(
-                    self.internal,
-                    n,
-                    ncols.as_mut_ptr(),
-                    rows.as_ptr(),
-                    cols.as_ptr(),
-                    values.as_ptr()
-                ));
-            } else {
-                check_hypre!(HYPRE_IJMatrixSetValues(
-                    self.internal,
-                    n,
-                    ncols.as_mut_ptr(),
-                    rows.as_ptr(),
-                    cols.as_ptr(),
-                    values.as_ptr()
-                ));
-            }
-        }
-        Ok(())
+        insert(self.internal, entries, add)
     }
 
-    /// Assembles the matrix and hands its ParCSR object over.
-    fn assemble(self) -> HypreResult<CSRMatrix<'h>> {
+    /// Assembles the matrix into a [CSRMatrix], which takes the IJ handle
+    /// over (to refill the values later).
+    fn assemble(mut self) -> HypreResult<CSRMatrix<'h>> {
         let mut parcsr: *mut c_void = null_mut();
         unsafe {
             check_hypre!(HYPRE_IJMatrixAssemble(self.internal));
             check_hypre!(HYPRE_IJMatrixGetObject(self.internal, &mut parcsr));
-            // `self` is dropped on return, and HYPRE_IJMatrixDestroy would
-            // also destroy the ParCSR object. With object type -1 it only
-            // frees the IJ interface, so the returned CSRMatrix becomes the
-            // sole owner.
-            check_hypre!(HYPRE_IJMatrixSetObjectType(self.internal, -1));
         }
+        // From here on the CSRMatrix destroys the handle, not `self`.
+        let ij = std::mem::replace(&mut self.internal, null_mut());
         Ok(CSRMatrix {
-            internal_matrix: parcsr as HYPRE_ParCSRMatrix,
+            ij,
+            parcsr: parcsr as HYPRE_ParCSRMatrix,
+            rows: self.rows.clone(),
             _hypre: PhantomData,
         })
     }
+}
+
+/// Adds (with `HYPRE_IJMatrixAddToValues`) or sets (with
+/// `HYPRE_IJMatrixSetValues`, local rows only) every entry of `ij`.
+pub(super) fn insert(ij: HYPRE_IJMatrix, entries: &[Entry], add: bool) -> HypreResult<()> {
+    let rows: Vec<HYPRE_BigInt> = entries.iter().map(|e| e.0).collect();
+    let cols: Vec<HYPRE_BigInt> = entries.iter().map(|e| e.1).collect();
+    let values: Vec<HYPRE_Complex> = entries.iter().map(|e| e.2).collect();
+    // One column per "row" entry: hypre reads entry k as
+    // (rows[k], cols[k], values[k]).
+    let mut ncols = vec![1 as HYPRE_Int; rows.len()];
+    let n = rows.len().try_into()?;
+    unsafe {
+        if add {
+            check_hypre!(HYPRE_IJMatrixAddToValues(
+                ij,
+                n,
+                ncols.as_mut_ptr(),
+                rows.as_ptr(),
+                cols.as_ptr(),
+                values.as_ptr()
+            ));
+        } else {
+            check_hypre!(HYPRE_IJMatrixSetValues(
+                ij,
+                n,
+                ncols.as_mut_ptr(),
+                rows.as_ptr(),
+                cols.as_ptr(),
+                values.as_ptr()
+            ));
+        }
+    }
+    Ok(())
 }
 
 impl_hypre_drop!(IjMatrix<'_>, internal, HYPRE_IJMatrixDestroy);

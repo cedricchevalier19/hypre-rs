@@ -1,7 +1,7 @@
 //! Creating hypre objects with the builders, including empty and invalid
 //! ranges, entries for other ranks' rows and values that do not fit.
 
-use hypre_rs::matrix::{CSRMatrix, DistributedMatrixBuilder, LocalMatrixBuilder};
+use hypre_rs::matrix::{DistributedMatrixBuilder, LocalMatrixBuilder};
 use hypre_rs::vector::{DistributedVectorBuilder, LocalVectorBuilder};
 use hypre_rs::HypreError;
 use mpi::topology::Communicator;
@@ -129,16 +129,6 @@ fn create_objects() -> Result<(), Box<dyn std::error::Error>> {
             Err(HypreError::ConversionError(_))
         ));
         drop(s.assemble()?);
-
-        // An empty ParCSR matrix, partitioned like `rows`.
-        let starts = [rows.start as usize, rows.end as usize];
-        let csr = CSRMatrix::new(&ctx, &comm, 10, 10, &starts, &starts)?;
-        drop(csr);
-        // A size that does not fit in HYPRE_BigInt.
-        assert!(matches!(
-            ctx.csr_matrix(&comm, usize::MAX, 10, &starts, &starts),
-            Err(HypreError::ConversionError(_))
-        ));
     }
     // hypre objects must be dropped before hypre is finalized (checked by the compiler)
     ctx.finalize()?;

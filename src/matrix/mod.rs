@@ -2,10 +2,10 @@
 //! [CSRMatrix], [SymmetricMatrix], and the builders that make them.
 
 use crate::error::HypreError;
-use crate::{HypreContext, HypreResult};
+use crate::HypreResult;
 use hypre_sys::{
-    HYPRE_BigInt, HYPRE_Complex, HYPRE_Int, HYPRE_ParCSRMatrix, HYPRE_ParCSRMatrixCreate,
-    HYPRE_ParCSRMatrixDestroy, HYPRE_ParCSRMatrixGetComm, HYPRE_ParCSRMatrixGetDims,
+    HYPRE_BigInt, HYPRE_Complex, HYPRE_IJMatrix, HYPRE_IJMatrixDestroy, HYPRE_Int,
+    HYPRE_ParCSRMatrix, HYPRE_ParCSRMatrixGetComm, HYPRE_ParCSRMatrixGetDims,
     HYPRE_ParCSRMatrixGetLocalRange, HYPRE_ParCSRMatrixGetRow, HYPRE_ParCSRMatrixRestoreRow,
 };
 use mpi::collective::{CommunicatorCollectives, SystemOperation};
@@ -15,72 +15,49 @@ use mpi::topology::{Communicator, SimpleCommunicator};
 use mpi::Count;
 use std::collections::HashMap;
 use std::marker::PhantomData;
-use std::num::TryFromIntError;
-use std::ops::Deref;
+use std::ops::{Deref, Range};
 use std::ptr::null_mut;
 
 mod builder;
+mod refill;
 pub use builder::{DistributedMatrixBuilder, LocalMatrixBuilder, SymmetricMatrixBuilder};
+pub use refill::{MatrixRefillBuilder, SymmetricMatrixRefillBuilder};
 
-/// Parallel CSR matrix, owning its hypre handle.
+/// Assembled parallel CSR matrix: the format hypre's solvers use.
+///
+/// It is made by a builder ([LocalMatrixBuilder], [DistributedMatrixBuilder],
+/// [SymmetricMatrixBuilder]) and cannot be modified, but its values can be
+/// replaced with the same sparsity pattern: [CSRMatrix::refill] and
+/// [CSRMatrix::update] turn it into a [MatrixRefillBuilder].
 ///
 /// Not `Clone`: copying the handle would destroy it twice.
 #[derive(Debug)]
 pub struct CSRMatrix<'h> {
-    internal_matrix: HYPRE_ParCSRMatrix,
+    /// hypre's IJ interface, kept to refill the values; destroying it also
+    /// destroys `parcsr`.
+    ij: HYPRE_IJMatrix,
+    parcsr: HYPRE_ParCSRMatrix,
+    /// Rows owned by this MPI rank.
+    rows: Range<u32>,
     _hypre: PhantomData<&'h ()>,
 }
 
-impl<'h> CSRMatrix<'h> {
-    fn translate_into_hypre_bigints(
-        values: &[usize],
-    ) -> Result<Vec<HYPRE_BigInt>, TryFromIntError> {
-        values
-            .iter()
-            .map(|&x| x.try_into())
-            .collect::<Result<Vec<HYPRE_BigInt>, TryFromIntError>>()
-    }
-
-    pub fn new(
-        _hypre: &'h HypreContext<'_>,
-        comm: &'h impl Communicator,
-        global_num_rows: usize,
-        global_num_cols: usize,
-        row_starts: &[usize],
-        col_starts: &[usize],
-    ) -> HypreResult<Self> {
-        let mut out = CSRMatrix {
-            internal_matrix: null_mut(),
-            _hypre: PhantomData,
-        };
-        let mut h_row_starts = Self::translate_into_hypre_bigints(row_starts)?;
-        let mut h_col_starts = Self::translate_into_hypre_bigints(col_starts)?;
-        unsafe {
-            check_hypre!(HYPRE_ParCSRMatrixCreate(
-                comm.as_raw(),
-                global_num_rows.try_into()?,
-                global_num_cols.try_into()?,
-                h_row_starts.as_mut_ptr(),
-                h_col_starts.as_mut_ptr(),
-                0,
-                0,
-                0,
-                &mut out.internal_matrix,
-            ));
-        }
-        Ok(out)
+impl CSRMatrix<'_> {
+    /// Rows owned by the current MPI rank.
+    pub fn local_range(&self) -> Range<u32> {
+        self.rows.clone()
     }
 }
 
 impl sealed::AsParCSR for CSRMatrix<'_> {
     fn as_parcsr(&self) -> HypreResult<HYPRE_ParCSRMatrix> {
-        Ok(self.internal_matrix)
+        Ok(self.parcsr)
     }
 }
 
 impl Matrix for CSRMatrix<'_> {}
 
-impl_hypre_drop!(CSRMatrix<'_>, internal_matrix, HYPRE_ParCSRMatrixDestroy);
+impl_hypre_drop!(CSRMatrix<'_>, ij, HYPRE_IJMatrixDestroy);
 
 /// A `(row, col, value)` matrix entry, in hypre's types.
 type Entry = (HYPRE_BigInt, HYPRE_BigInt, HYPRE_Complex);
@@ -540,7 +517,9 @@ mod tests {
     fn drop_null_handle() {
         let _lock = crate::utils::hypre_error_lock();
         drop(CSRMatrix {
-            internal_matrix: null_mut(),
+            ij: null_mut(),
+            parcsr: null_mut(),
+            rows: 0..0,
             _hypre: PhantomData,
         });
         assert_eq!(unsafe { hypre_sys::HYPRE_GetError() }, 0);
@@ -564,15 +543,6 @@ mod tests {
             ));
         }
         Ok(())
-    }
-
-    #[test]
-    fn translate_into_hypre_bigints() {
-        assert_eq!(
-            CSRMatrix::translate_into_hypre_bigints(&[0, 5, 10]).ok(),
-            Some(vec![0, 5, 10])
-        );
-        assert!(CSRMatrix::translate_into_hypre_bigints(&[0, usize::MAX]).is_err());
     }
 
     #[test]

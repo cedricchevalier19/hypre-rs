@@ -42,8 +42,8 @@
 //! ```
 
 pub use crate::matrix::{
-    CSRMatrix, DistributedMatrixBuilder, LocalMatrixBuilder, Matrix, SymmetricMatrix,
-    SymmetricMatrixBuilder,
+    CSRMatrix, DistributedMatrixBuilder, LocalMatrixBuilder, Matrix, MatrixRefillBuilder,
+    SymmetricMatrix, SymmetricMatrixBuilder, SymmetricMatrixRefillBuilder,
 };
 pub use crate::preconditioners::{
     AMGPreconditionerConfigBuilder, JacobiPreconditioner, Preconditioner,
@@ -55,5 +55,7 @@ pub use crate::solvers::{
     GramSchmidtPasses, InterpType, IterativeSolverStatus, LGMRESSolverConfigBuilder, LinearSolver,
     PCGSolverConfigBuilder, Smoother, Solver, SymmetricLinearSolver, SymmetricSolver,
 };
-pub use crate::vector::{DistributedVectorBuilder, LocalVectorBuilder, ParVector};
+pub use crate::vector::{
+    DistributedVectorBuilder, LocalVectorBuilder, ParVector, VectorRefillBuilder,
+};
 pub use crate::{distribute_rows, HypreContext, HypreError};
