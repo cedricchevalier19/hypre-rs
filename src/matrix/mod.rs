@@ -1,13 +1,12 @@
+//! Distributed matrices: the [Matrix] trait of assembled matrices,
+//! [CSRMatrix], [SymmetricMatrix], and the builders that make them.
+
 use crate::error::HypreError;
-use crate::utils::inclusive_bounds;
 use crate::{HypreContext, HypreResult};
 use hypre_sys::{
-    HYPRE_BigInt, HYPRE_Complex, HYPRE_IJMatrix, HYPRE_IJMatrixAddToValues, HYPRE_IJMatrixAssemble,
-    HYPRE_IJMatrixCreate, HYPRE_IJMatrixDestroy, HYPRE_IJMatrixGetObject, HYPRE_IJMatrixInitialize,
-    HYPRE_IJMatrixSetObjectType, HYPRE_Int, HYPRE_ParCSRMatrix, HYPRE_ParCSRMatrixCreate,
+    HYPRE_BigInt, HYPRE_Complex, HYPRE_Int, HYPRE_ParCSRMatrix, HYPRE_ParCSRMatrixCreate,
     HYPRE_ParCSRMatrixDestroy, HYPRE_ParCSRMatrixGetComm, HYPRE_ParCSRMatrixGetDims,
     HYPRE_ParCSRMatrixGetLocalRange, HYPRE_ParCSRMatrixGetRow, HYPRE_ParCSRMatrixRestoreRow,
-    HYPRE_PARCSR,
 };
 use mpi::collective::{CommunicatorCollectives, SystemOperation};
 use mpi::datatype::{Partition, PartitionMut};
@@ -17,10 +16,11 @@ use mpi::Count;
 use std::collections::HashMap;
 use std::marker::PhantomData;
 use std::num::TryFromIntError;
-use std::ops::{Deref, Range};
-use std::{ffi::c_void, ptr::null_mut};
+use std::ops::Deref;
+use std::ptr::null_mut;
 
-use itertools::Itertools;
+mod builder;
+pub use builder::{DistributedMatrixBuilder, LocalMatrixBuilder, SymmetricMatrixBuilder};
 
 /// Parallel CSR matrix, owning its hypre handle.
 ///
@@ -82,210 +82,6 @@ impl Matrix for CSRMatrix<'_> {}
 
 impl_hypre_drop!(CSRMatrix<'_>, internal_matrix, HYPRE_ParCSRMatrixDestroy);
 
-#[derive(Debug)]
-pub struct IJMatrix<'h> {
-    internal_matrix: HYPRE_IJMatrix,
-    _hypre: PhantomData<&'h ()>,
-}
-
-/// Converts from a [IJMatrix]
-///
-/// Calls hypre to assemble the matrix in CSR format.
-/// Conversion can fail in hypre.
-impl<'h> TryFrom<IJMatrix<'h>> for CSRMatrix<'h> {
-    type Error = HypreError;
-
-    fn try_from(ij: IJMatrix<'h>) -> Result<Self, Self::Error> {
-        let mut parcsr: *mut c_void = null_mut();
-        unsafe {
-            check_hypre!(HYPRE_IJMatrixAssemble(ij.internal_matrix));
-            check_hypre!(HYPRE_IJMatrixGetObject(ij.internal_matrix, &mut parcsr));
-            // `ij` is dropped on return, and HYPRE_IJMatrixDestroy would also
-            // destroy the ParCSR object. With object type -1 it only frees the
-            // IJ interface, so the returned CSRMatrix becomes the sole owner.
-            check_hypre!(HYPRE_IJMatrixSetObjectType(ij.internal_matrix, -1));
-        }
-        Ok(CSRMatrix {
-            internal_matrix: parcsr as HYPRE_ParCSRMatrix,
-            _hypre: PhantomData,
-        })
-    }
-}
-
-impl<'h> IJMatrix<'h> {
-    /// Creates an IJMatrix from a communicator [Communicator] and sizes
-    ///
-    /// # Arguments
-    ///
-    /// - comm: MPI communicotor
-    /// - rows: global indices of the rows owned by the current MPI rank
-    /// - cols: global indices of the cols owned by the current MPI rank
-    ///
-    /// # Remarks
-    ///
-    /// Ranges are half-open, as usual in Rust: `0..10` is 10 rows (hypre's
-    /// inclusive `(0, 9)`). An empty range is allowed for an MPI rank that owns
-    /// no rows. The ranges of all MPI ranks must not overlap and must cover
-    /// the whole matrix.
-    ///
-    /// # Errors
-    ///
-    /// [HypreError::InvalidRange] if a range's start is greater than its end.
-    ///
-    /// # Example
-    ///
-    /// ```
-    /// # fn main() -> Result<(), Box<dyn std::error::Error>> {
-    /// # extern crate hypre_rs;
-    /// # use mpi::initialize;
-    /// # use mpi::topology::Communicator;
-    /// use hypre_rs::matrix::IJMatrix;
-    /// # let universe = mpi::initialize().ok_or("MPI was already initialized (or finalized) in this process")?;
-    /// # let ctx = hypre_rs::initialize(&universe)?;
-    /// # let mpi_comm = universe.world();
-    /// let global_size: u32 = 100;
-    /// let (rank, size) = (mpi_comm.rank() as u32, mpi_comm.size() as u32);
-    /// let begin = rank * global_size / size;
-    /// let end = (rank + 1) * global_size / size;
-    /// let ij_matrix = IJMatrix::new(&ctx, &mpi_comm, begin..end, begin..end)?;
-    /// # drop(ij_matrix);
-    /// # ctx.finalize()?;
-    /// # Ok(())
-    /// # }
-    /// ```
-    pub fn new(
-        _hypre: &'h HypreContext<'_>,
-        comm: &'h impl mpi::topology::Communicator,
-        rows: Range<u32>,
-        cols: Range<u32>,
-    ) -> HypreResult<Self> {
-        let (row_lower, row_upper) = inclusive_bounds(&rows)?;
-        let (col_lower, col_upper) = inclusive_bounds(&cols)?;
-        let mut out = Self {
-            internal_matrix: null_mut(),
-            _hypre: PhantomData,
-        };
-        // If a call below fails, dropping `out` destroys whatever was created.
-        unsafe {
-            check_hypre!(HYPRE_IJMatrixCreate(
-                comm.as_raw(),
-                row_lower,
-                row_upper,
-                col_lower,
-                col_upper,
-                &mut out.internal_matrix,
-            ));
-
-            // unwrap is ok as HYPRE_PARCSR is i32 in C
-            check_hypre!(HYPRE_IJMatrixSetObjectType(
-                out.internal_matrix,
-                HYPRE_PARCSR.try_into().unwrap()
-            ));
-            check_hypre!(HYPRE_IJMatrixInitialize(out.internal_matrix));
-        }
-        Ok(out)
-    }
-
-    /// Add elements to the matrix.
-    ///
-    /// Elements that do not already exist are created.
-    /// This routine also to contribute to any element, even remote.
-    ///
-    /// # Example
-    ///
-    /// ```
-    /// # fn main() -> Result<(), Box<dyn std::error::Error>> {
-    /// # extern crate hypre_rs;
-    /// # use mpi::initialize;
-    /// # use mpi::topology::Communicator;
-    /// use hypre_rs::matrix::IJMatrix;
-    /// # let universe = mpi::initialize().ok_or("MPI was already initialized (or finalized) in this process")?;
-    /// # let ctx = hypre_rs::initialize(&universe)?;
-    /// # let mpi_comm = universe.world();
-    /// # let global_size: u32 = 100;
-    /// # let (rank, size) = (mpi_comm.rank() as u32, mpi_comm.size() as u32);
-    /// # let local_begin = rank * global_size / size;
-    /// # let local_end = (rank + 1) * global_size / size;
-    /// let mut ij_matrix = IJMatrix::new(&ctx, &mpi_comm, local_begin..local_end, local_begin..local_end)?;
-    /// ij_matrix.add_elements::<u32, f64>((local_begin..local_end).map(|id| (id, id, 1.0f64)))?;
-    /// # drop(ij_matrix);
-    /// # ctx.finalize()?;
-    /// # Ok(())
-    /// # }
-    /// ```
-    pub fn add_elements<Id, V>(
-        &mut self,
-        nnz: impl IntoIterator<Item = (Id, Id, V)>,
-    ) -> HypreResult<()>
-    where
-        Id: Copy + TryInto<HYPRE_BigInt>,
-        V: Copy + TryInto<HYPRE_Complex>,
-        HypreError: From<<Id as TryInto<HYPRE_BigInt>>::Error>,
-        HypreError: From<<V as TryInto<HYPRE_Complex>>::Error>,
-    {
-        let (rows, cols, values): (Vec<_>, Vec<_>, Vec<_>) =
-            convert_entries(nnz)?.into_iter().multiunzip();
-        self.add_to_values(&rows, &cols, &values)
-    }
-
-    /// Adds `values[k]` to entry `(rows[k], cols[k])` for every `k`.
-    fn add_to_values(
-        &mut self,
-        rows: &[HYPRE_BigInt],
-        cols: &[HYPRE_BigInt],
-        values: &[HYPRE_Complex],
-    ) -> HypreResult<()> {
-        debug_assert!(rows.len() == cols.len() && rows.len() == values.len());
-        // One column per "row" entry: hypre reads entry k as
-        // (rows[k], cols[k], values[k]).
-        let mut ncols = vec![1 as HYPRE_Int; rows.len()];
-        unsafe {
-            check_hypre!(HYPRE_IJMatrixAddToValues(
-                self.internal_matrix,
-                rows.len().try_into()?,
-                ncols.as_mut_ptr(),
-                rows.as_ptr(),
-                cols.as_ptr(),
-                values.as_ptr()
-            ));
-        }
-        Ok(())
-    }
-}
-
-impl<'h> IJMatrix<'h> {
-    /// Assembles the matrix into a [CSRMatrix], the format hypre's solvers
-    /// use; same as `CSRMatrix::try_from`.
-    ///
-    /// An `IJMatrix` is not a [Matrix]: it must be assembled before a solver
-    /// can use it, and cannot be modified afterwards. Assembly exchanges the
-    /// entries added for rows owned by other MPI ranks, so it is collective.
-    ///
-    /// ```compile_fail
-    /// # fn main() -> Result<(), Box<dyn std::error::Error>> {
-    /// # let universe = mpi::initialize().ok_or("MPI was already initialized (or finalized) in this process")?;
-    /// # let comm = universe.world();
-    /// # let ctx = hypre_rs::initialize(&universe)?;
-    /// let mut a = ctx.ij_matrix(&comm, 0..1, 0..1)?;
-    /// a.add_elements([(0u32, 0u32, 1.0)])?;
-    /// let b = ctx.ij_vector(&comm, 0..1)?;
-    /// let mut x = ctx.ij_vector(&comm, 0..1)?;
-    /// let solver = ctx.gmres_solver(&comm, Default::default())?;
-    /// solver.solve(&a, &b, &mut x)?; // `a` is not assembled
-    /// # Ok(())
-    /// # }
-    /// ```
-    ///
-    /// # Errors
-    ///
-    /// The error returned by hypre.
-    pub fn assemble(self) -> HypreResult<CSRMatrix<'h>> {
-        CSRMatrix::try_from(self)
-    }
-}
-
-impl_hypre_drop!(IJMatrix<'_>, internal_matrix, HYPRE_IJMatrixDestroy);
-
 /// A `(row, col, value)` matrix entry, in hypre's types.
 type Entry = (HYPRE_BigInt, HYPRE_BigInt, HYPRE_Complex);
 
@@ -326,8 +122,9 @@ pub(crate) mod sealed {
 
 /// An assembled distributed matrix, which hypre's solvers accept.
 ///
-/// Implemented by [CSRMatrix] and by a [SymmetricMatrix] of one. An
-/// [IJMatrix] is not a `Matrix`: [IJMatrix::assemble] it first. The trait is
+/// Implemented by [CSRMatrix] and by a [SymmetricMatrix] of one. A builder
+/// ([LocalMatrixBuilder], [DistributedMatrixBuilder],
+/// [SymmetricMatrixBuilder]) is not a `Matrix`: assemble it first. The trait is
 /// sealed: other types cannot implement it. It is object safe, so
 /// `&dyn Matrix` works when the storage is chosen at runtime.
 pub trait Matrix: sealed::AsParCSR {
@@ -354,11 +151,11 @@ pub trait Matrix: sealed::AsParCSR {
     /// # let comm = universe.world();
     /// # let ctx = hypre_rs::initialize(&universe)?;
     /// let rows = hypre_rs::distribute_rows(&comm, 10);
-    /// let mut ij = ctx.ij_matrix(&comm, rows.clone(), rows.clone())?;
+    /// let mut a = ctx.local_matrix_builder(&comm, rows.clone(), rows.clone())?;
     /// // Upper bidiagonal: not symmetric.
-    /// ij.add_elements(rows.clone().map(|i| (i, i, 2.0)))?;
-    /// ij.add_elements(rows.filter(|&i| i < 9).map(|i| (i, i + 1, -1.0)))?;
-    /// let matrix = ij.assemble()?;
+    /// a.add(rows.clone().map(|i| (i, i, 2.0)))?;
+    /// a.add(rows.filter(|&i| i < 9).map(|i| (i, i + 1, -1.0)))?;
+    /// let matrix = a.assemble()?;
     /// assert!(!matrix.is_symmetric(0.0)?);
     /// # drop(matrix);
     /// # ctx.finalize()?;
@@ -503,19 +300,14 @@ pub trait Matrix: sealed::AsParCSR {
 
 /// Square matrix that is symmetric, stored as an `M`.
 ///
-/// hypre always stores both triangles. A `SymmetricMatrix<IJMatrix>`
-/// (made by [SymmetricMatrix::new] or
-/// [HypreContext::symmetric_matrix]) is symmetric by construction: entries
-/// are given for the lower triangle only (`col <= row`) and each
-/// off-diagonal entry `(i, j, v)` is also added at `(j, i)`.
-/// [SymmetricMatrix::assemble] then turns it into a
-/// `SymmetricMatrix<CSRMatrix>`. Assembled matrices become symmetric ones
-/// after a runtime check ([SymmetricMatrix::try_from]), and any matrix on
+/// A [SymmetricMatrixBuilder] makes one that is symmetric by construction,
+/// from the entries of its lower triangle. Assembled matrices become
+/// symmetric ones after a runtime check ([SymmetricMatrix::try_from]), or on
 /// the caller's word ([SymmetricMatrix::from_matrix_unchecked]).
 ///
 /// Solvers that need a symmetric matrix, such as
-/// [PCGSolver](crate::solvers::PCGSolver), only accept this type. Once
-/// assembled, it is also a [Matrix], so every solver accepts it. It
+/// [PCGSolver](crate::solvers::PCGSolver), only accept this type. It is
+/// also a [Matrix], so every solver accepts it. It cannot be modified, and
 /// dereferences to `M` (read only: changing `M` could break the
 /// symmetry).
 ///
@@ -530,10 +322,10 @@ pub trait Matrix: sealed::AsParCSR {
 /// # let comm = universe.world();
 /// # let ctx = hypre_rs::initialize(&universe)?;
 /// let rows = hypre_rs::distribute_rows(&comm, 10);
-/// let mut laplacian = ctx.symmetric_matrix(&comm, rows.clone())?;
+/// let mut laplacian = ctx.symmetric_matrix_builder(&comm, rows.clone())?;
 /// // Diagonal and sub-diagonal; the super-diagonal is added by symmetry.
-/// laplacian.add_elements(rows.clone().map(|i| (i, i, 2.0)))?;
-/// laplacian.add_elements(rows.filter(|&i| i > 0).map(|i| (i, i - 1, -1.0)))?;
+/// laplacian.add(rows.clone().map(|i| (i, i, 2.0)))?;
+/// laplacian.add(rows.filter(|&i| i > 0).map(|i| (i, i - 1, -1.0)))?;
 /// let laplacian = laplacian.assemble()?;
 /// assert!(laplacian.is_symmetric(0.0)?);
 /// # drop(laplacian);
@@ -543,86 +335,9 @@ pub trait Matrix: sealed::AsParCSR {
 /// ```
 #[derive(Debug)]
 pub struct SymmetricMatrix<M: ?Sized> {
-    /// Symmetric: only filled through [SymmetricMatrix::add_elements], or
-    /// checked (or vouched for) on conversion.
+    /// Symmetric: built by a [SymmetricMatrixBuilder], or checked (or
+    /// vouched for) on conversion.
     matrix: M,
-}
-
-impl<'h> SymmetricMatrix<IJMatrix<'h>> {
-    /// Creates an empty symmetric matrix, stored as an [IJMatrix].
-    ///
-    /// `rows` is the half-open range of global rows owned by the current MPI
-    /// rank, as for [IJMatrix::new]; the matrix is square, so the same range
-    /// is used for the columns.
-    ///
-    /// # Errors
-    ///
-    /// [HypreError::InvalidRange] if `rows.start > rows.end`, or the error
-    /// returned by hypre.
-    pub fn new(
-        hypre: &'h HypreContext<'_>,
-        comm: &'h impl Communicator,
-        rows: Range<u32>,
-    ) -> HypreResult<Self> {
-        Ok(Self {
-            matrix: IJMatrix::new(hypre, comm, rows.clone(), rows)?,
-        })
-    }
-
-    /// Adds `(row, col, value)` entries of the lower triangle (`col <= row`).
-    ///
-    /// Each off-diagonal entry is also added at `(col, row)`, so an entry of
-    /// the upper triangle must not be given as well: it would be counted
-    /// twice. As for [IJMatrix::add_elements], values are added to existing
-    /// ones and entries may belong to other MPI ranks; the mirrored entry of
-    /// a local row often does.
-    ///
-    /// # Errors
-    ///
-    /// - [HypreError::NotLowerTriangular] if an entry has `col > row`,
-    /// - [HypreError::ConversionError] if an index or value does not fit
-    ///   hypre's types,
-    ///
-    /// in which cases nothing is added, or the error returned by hypre.
-    pub fn add_elements<Id, V>(
-        &mut self,
-        nnz: impl IntoIterator<Item = (Id, Id, V)>,
-    ) -> HypreResult<()>
-    where
-        Id: Copy + TryInto<HYPRE_BigInt>,
-        V: Copy + TryInto<HYPRE_Complex>,
-        HypreError: From<<Id as TryInto<HYPRE_BigInt>>::Error>,
-        HypreError: From<<V as TryInto<HYPRE_Complex>>::Error>,
-    {
-        let (rows, cols, values): (Vec<_>, Vec<_>, Vec<_>) = mirror_lower(convert_entries(nnz)?)?
-            .into_iter()
-            .multiunzip();
-        self.matrix.add_to_values(&rows, &cols, &values)
-    }
-
-    /// Assembles the matrix into a [CSRMatrix]; see [IJMatrix::assemble].
-    ///
-    /// Solvers need an assembled matrix. Assembly is collective. A
-    /// `SymmetricMatrix<CSRMatrix>` has no `add_elements`: it cannot be
-    /// modified afterwards.
-    ///
-    /// ```compile_fail
-    /// # fn main() -> Result<(), Box<dyn std::error::Error>> {
-    /// # let universe = mpi::initialize().ok_or("MPI was already initialized (or finalized) in this process")?;
-    /// # let comm = universe.world();
-    /// # let ctx = hypre_rs::initialize(&universe)?;
-    /// let mut matrix = ctx.symmetric_matrix(&comm, 0..1)?;
-    /// matrix.add_elements([(0u32, 0u32, 1.0)])?;
-    /// let mut csr = matrix.assemble()?;
-    /// csr.add_elements([(0u32, 0u32, 1.0)])?; // no such method
-    /// # Ok(())
-    /// # }
-    /// ```
-    pub fn assemble(self) -> HypreResult<SymmetricMatrix<CSRMatrix<'h>>> {
-        Ok(SymmetricMatrix {
-            matrix: self.matrix.assemble()?,
-        })
-    }
 }
 
 impl<M: Matrix> SymmetricMatrix<M> {
@@ -651,16 +366,12 @@ impl<M> SymmetricMatrix<M> {
     ///
     /// Use it when the matrix is known to be symmetric and the check of
     /// [SymmetricMatrix::try_from] (collective, about the cost of a
-    /// transposition) is not worth it, or for an [IJMatrix] that is not
-    /// assembled yet. It neither communicates nor assembles the matrix.
+    /// transposition) is not worth it. It does not communicate.
     ///
     /// This is not `unsafe`: an asymmetric matrix cannot cause undefined
     /// behavior. But solvers then work on a matrix that breaks their
     /// assumptions: CG, for example, may not converge, or converge to a wrong
     /// solution without reporting an error.
-    ///
-    /// [SymmetricMatrix::add_elements] keeps adding mirrored entries, so it
-    /// keeps the matrix as symmetric as it was.
     ///
     /// # Example
     ///
@@ -672,9 +383,9 @@ impl<M> SymmetricMatrix<M> {
     /// # let ctx = hypre_rs::initialize(&universe)?;
     /// let rows = hypre_rs::distribute_rows(&comm, 10);
     /// // Diagonal, so symmetric: no need to check it.
-    /// let mut ij = ctx.ij_matrix(&comm, rows.clone(), rows.clone())?;
-    /// ij.add_elements(rows.map(|i| (i, i, 2.0)))?;
-    /// let diagonal = SymmetricMatrix::from_matrix_unchecked(ij);
+    /// let mut a = ctx.local_matrix_builder(&comm, rows.clone(), rows.clone())?;
+    /// a.add(rows.map(|i| (i, i, 2.0)))?;
+    /// let diagonal = SymmetricMatrix::from_matrix_unchecked(a.assemble()?);
     /// # drop(diagonal);
     /// # ctx.finalize()?;
     /// # Ok(())
@@ -705,14 +416,15 @@ impl<M> SymmetricMatrix<M> {
 /// # let ctx = hypre_rs::initialize(&universe)?;
 /// let rows = hypre_rs::distribute_rows(&comm, 10);
 /// // tridiag(-1, 2, -1), with both triangles given.
-/// let mut ij = ctx.ij_matrix(&comm, rows.clone(), rows.clone())?;
+/// // Row i - 1 may belong to the previous rank: a distributed builder.
+/// let mut a = ctx.distributed_matrix_builder(&comm, rows.clone(), rows.clone())?;
 /// for i in rows {
-///     ij.add_elements([(i, i, 2.0)])?;
+///     a.add([(i, i, 2.0)])?;
 ///     if i > 0 {
-///         ij.add_elements([(i, i - 1, -1.0), (i - 1, i, -1.0)])?;
+///         a.add([(i, i - 1, -1.0), (i - 1, i, -1.0)])?;
 ///     }
 /// }
-/// let laplacian = SymmetricMatrix::try_from(ij.assemble()?)?;
+/// let laplacian = SymmetricMatrix::try_from(a.assemble()?)?;
 /// # drop(laplacian);
 /// # ctx.finalize()?;
 /// # Ok(())
@@ -729,8 +441,7 @@ impl<'h> TryFrom<CSRMatrix<'h>> for SymmetricMatrix<CSRMatrix<'h>> {
 }
 
 /// Read-only access to the stored matrix. There is no `DerefMut`: changing
-/// the matrix (for example adding entries to its [IJMatrix]) could break the
-/// symmetry. Use [SymmetricMatrix::add_elements] instead.
+/// the matrix could break the symmetry.
 impl<M: ?Sized> Deref for SymmetricMatrix<M> {
     type Target = M;
 
@@ -824,14 +535,10 @@ mod tests {
     use super::*;
 
     /// Dropping a wrapper whose `Create` never succeeded must leave hypre's
-    /// global error state clean (`HYPRE_IJMatrixDestroy(NULL)` sets the flag).
+    /// global error state clean (destroying a null handle sets the flag).
     #[test]
     fn drop_null_handle() {
         let _lock = crate::utils::hypre_error_lock();
-        drop(IJMatrix {
-            internal_matrix: null_mut(),
-            _hypre: PhantomData,
-        });
         drop(CSRMatrix {
             internal_matrix: null_mut(),
             _hypre: PhantomData,

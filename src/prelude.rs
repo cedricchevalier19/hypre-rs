@@ -22,8 +22,8 @@
 //! let ctx = hypre_rs::initialize(&universe)?;
 //!
 //! let rows = distribute_rows(&comm, 10);
-//! let mut a = ctx.symmetric_matrix(&comm, rows.clone())?;
-//! a.add_elements(rows.clone().map(|i| (i, i, 2.0)))?;
+//! let mut a = ctx.symmetric_matrix_builder(&comm, rows.clone())?;
+//! a.add(rows.clone().map(|i| (i, i, 2.0)))?;
 //! let a = a.assemble()?;
 //! let b = ParVector::from_fn(&ctx, &comm, rows.clone(), |_| 2.0)?;
 //! let mut x = ParVector::zeros(&ctx, &comm, rows)?;
@@ -41,7 +41,10 @@
 //! # }
 //! ```
 
-pub use crate::matrix::{CSRMatrix, IJMatrix, Matrix, SymmetricMatrix};
+pub use crate::matrix::{
+    CSRMatrix, DistributedMatrixBuilder, LocalMatrixBuilder, Matrix, SymmetricMatrix,
+    SymmetricMatrixBuilder,
+};
 pub use crate::preconditioners::{
     AMGPreconditionerConfigBuilder, JacobiPreconditioner, Preconditioner,
     SymmetricAMGPreconditionerConfigBuilder, SymmetricPreconditioner, SymmetricSmoother,
@@ -52,5 +55,5 @@ pub use crate::solvers::{
     GramSchmidtPasses, InterpType, IterativeSolverStatus, LGMRESSolverConfigBuilder, LinearSolver,
     PCGSolverConfigBuilder, Smoother, Solver, SymmetricLinearSolver, SymmetricSolver,
 };
-pub use crate::vector::{IJVector, ParVector};
+pub use crate::vector::{DistributedVectorBuilder, LocalVectorBuilder, ParVector};
 pub use crate::{distribute_rows, HypreContext, HypreError};

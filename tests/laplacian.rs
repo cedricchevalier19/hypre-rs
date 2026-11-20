@@ -21,7 +21,7 @@ fn laplacian_solution_values() -> Result<(), Box<dyn std::error::Error>> {
         // Only the lower triangle is given; the super-diagonal comes from
         // symmetry, and for the first local row it belongs to the previous
         // rank. A wrong mirroring would give a wrong solution below.
-        let mut a = ctx.symmetric_matrix(&comm, rows.clone())?;
+        let mut a = ctx.symmetric_matrix_builder(&comm, rows.clone())?;
         let mut entries = Vec::new();
         for i in rows.clone() {
             if i > 0 {
@@ -29,11 +29,11 @@ fn laplacian_solution_values() -> Result<(), Box<dyn std::error::Error>> {
             }
             entries.push((i, i, 2.0));
         }
-        a.add_elements(entries)?;
+        a.add(entries)?;
         let a = a.assemble()?;
 
-        let mut b = ctx.ij_vector(&comm, rows.clone())?;
-        b.add_elements(
+        let mut b = ctx.local_vector_builder(&comm, rows.clone())?;
+        b.add(
             rows.clone()
                 .map(|i| (i, if i == 0 || i == N - 1 { 1.0 } else { 0.0 })),
         )?;

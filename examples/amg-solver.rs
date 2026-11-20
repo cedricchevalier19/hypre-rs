@@ -37,14 +37,14 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
 
     // The 2D Poisson problem (5-point Laplacian), from its lower triangle.
     let rows = distribute_rows(&comm, M * M);
-    let mut a = ctx.symmetric_matrix(&comm, rows.clone())?;
+    let mut a = ctx.symmetric_matrix_builder(&comm, rows.clone())?;
     for row in rows.clone() {
-        a.add_elements([(row, row, 4.0)])?;
+        a.add([(row, row, 4.0)])?;
         if row % M > 0 {
-            a.add_elements([(row, row - 1, -1.0)])?;
+            a.add([(row, row - 1, -1.0)])?;
         }
         if row >= M {
-            a.add_elements([(row, row - M, -1.0)])?;
+            a.add([(row, row - M, -1.0)])?;
         }
     }
     let a = a.assemble()?;

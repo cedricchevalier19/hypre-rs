@@ -58,9 +58,9 @@ fn amg_solver() -> Result<(), Box<dyn std::error::Error>> {
         let rows = hypre_rs::distribute_rows(&comm, N);
 
         // The 1D Laplacian, as a SymmetricMatrix: every solver accepts it.
-        let mut a = ctx.symmetric_matrix(&comm, rows.clone())?;
-        a.add_elements(rows.clone().map(|i| (i, i, 2.0)))?;
-        a.add_elements(rows.clone().filter(|&i| i > 0).map(|i| (i, i - 1, -1.0)))?;
+        let mut a = ctx.symmetric_matrix_builder(&comm, rows.clone())?;
+        a.add(rows.clone().map(|i| (i, i, 2.0)))?;
+        a.add(rows.clone().filter(|&i| i > 0).map(|i| (i, i - 1, -1.0)))?;
         let a = a.assemble()?;
         let b = rhs(&ctx, &comm, rows.clone())?;
 

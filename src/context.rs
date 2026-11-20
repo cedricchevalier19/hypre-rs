@@ -1,6 +1,8 @@
 //! The [HypreContext]: hypre initialization, finalization and object creation.
 
-use crate::matrix::{CSRMatrix, IJMatrix, SymmetricMatrix};
+use crate::matrix::{
+    CSRMatrix, DistributedMatrixBuilder, LocalMatrixBuilder, SymmetricMatrixBuilder,
+};
 use crate::preconditioners::{
     AMGPreconditioner, AMGPreconditionerConfig, SymmetricAMGPreconditioner,
     SymmetricAMGPreconditionerConfig,
@@ -10,7 +12,7 @@ use crate::solvers::{
     COGMRESSolverConfig, FlexGMRESSolver, FlexGMRESSolverConfig, GMRESSolver, GMRESSolverConfig,
     LGMRESSolver, LGMRESSolverConfig, PCGSolver, PCGSolverConfig,
 };
-use crate::vector::IJVector;
+use crate::vector::{DistributedVectorBuilder, LocalVectorBuilder};
 use crate::{HypreError, HypreResult};
 use hypre_sys::{HYPRE_Finalize, HYPRE_Initialize};
 use mpi::environment::Universe;
@@ -34,8 +36,11 @@ static INITIALIZED: AtomicBool = AtomicBool::new(false);
 /// - a communicator outlives the hypre objects that use it.
 ///
 /// Objects are created either with the factory methods of the context
-/// ([HypreContext::ij_matrix], [HypreContext::symmetric_matrix],
-/// [HypreContext::ij_vector], [HypreContext::csr_matrix],
+/// ([HypreContext::local_matrix_builder],
+/// [HypreContext::distributed_matrix_builder],
+/// [HypreContext::symmetric_matrix_builder],
+/// [HypreContext::local_vector_builder],
+/// [HypreContext::distributed_vector_builder], [HypreContext::csr_matrix],
 /// [HypreContext::pcg_solver], [HypreContext::gmres_solver] and the other
 /// solvers) or with their `new`
 /// constructor.
@@ -46,16 +51,16 @@ static INITIALIZED: AtomicBool = AtomicBool::new(false);
 /// # Example
 ///
 /// ```
-/// use hypre_rs::matrix::IJMatrix;
+/// use hypre_rs::matrix::DistributedMatrixBuilder;
 ///
 /// let universe = mpi::initialize().ok_or("MPI was already initialized (or finalized) in this process")?;
 /// let comm = universe.world();
 /// let ctx = hypre_rs::initialize(&universe)?;
 /// let rows = hypre_rs::distribute_rows(&comm, 10);
 ///
-/// let matrix = ctx.ij_matrix(&comm, rows.clone(), rows.clone())?;
+/// let matrix = ctx.distributed_matrix_builder(&comm, rows.clone(), rows.clone())?;
 /// // Same as the factory method above.
-/// let other = IJMatrix::new(&ctx, &comm, rows.clone(), rows)?;
+/// let other = DistributedMatrixBuilder::new(&ctx, &comm, rows.clone(), rows)?;
 /// drop((matrix, other));
 /// ctx.finalize()?;
 /// # Ok::<(), Box<dyn std::error::Error>>(())
@@ -64,11 +69,11 @@ static INITIALIZED: AtomicBool = AtomicBool::new(false);
 /// Finalizing hypre while an object still uses it does not compile:
 ///
 /// ```compile_fail,E0505
-/// # use hypre_rs::matrix::IJMatrix;
+/// # use hypre_rs::matrix::DistributedMatrixBuilder;
 /// let universe = mpi::initialize().ok_or("MPI was already initialized (or finalized) in this process")?;
 /// let comm = universe.world();
 /// let ctx = hypre_rs::initialize(&universe)?;
-/// let matrix = IJMatrix::new(&ctx, &comm, 0..0, 0..0)?;
+/// let matrix = DistributedMatrixBuilder::new(&ctx, &comm, 0..0, 0..0)?;
 /// ctx.finalize()?; // error: `ctx` is still borrowed by `matrix`
 /// drop(matrix);
 /// # Ok::<(), Box<dyn std::error::Error>>(())
@@ -80,7 +85,7 @@ static INITIALIZED: AtomicBool = AtomicBool::new(false);
 /// let universe = mpi::initialize().ok_or("MPI was already initialized (or finalized) in this process")?;
 /// let ctx = hypre_rs::initialize(&universe)?;
 /// let comm = universe.world().duplicate();
-/// let vector = ctx.ij_vector(&comm, 0..0)?;
+/// let vector = ctx.distributed_vector_builder(&comm, 0..0)?;
 /// drop(comm); // error: `comm` is still borrowed by `vector`
 /// drop(vector);
 /// # Ok::<(), Box<dyn std::error::Error>>(())
@@ -135,23 +140,34 @@ impl HypreContext<'_> {
         }
     }
 
-    /// Creates an [IJMatrix]; see [IJMatrix::new].
-    pub fn ij_matrix<'a>(
+    /// Creates a [LocalMatrixBuilder]; see [LocalMatrixBuilder::new].
+    pub fn local_matrix_builder<'a>(
         &'a self,
         comm: &'a impl Communicator,
         rows: Range<u32>,
         cols: Range<u32>,
-    ) -> HypreResult<IJMatrix<'a>> {
-        IJMatrix::new(self, comm, rows, cols)
+    ) -> HypreResult<LocalMatrixBuilder<'a>> {
+        LocalMatrixBuilder::new(self, comm, rows, cols)
     }
 
-    /// Creates a [SymmetricMatrix]; see [SymmetricMatrix::new].
-    pub fn symmetric_matrix<'a>(
+    /// Creates a [DistributedMatrixBuilder]; see
+    /// [DistributedMatrixBuilder::new].
+    pub fn distributed_matrix_builder<'a>(
         &'a self,
         comm: &'a impl Communicator,
         rows: Range<u32>,
-    ) -> HypreResult<SymmetricMatrix<IJMatrix<'a>>> {
-        SymmetricMatrix::new(self, comm, rows)
+        cols: Range<u32>,
+    ) -> HypreResult<DistributedMatrixBuilder<'a>> {
+        DistributedMatrixBuilder::new(self, comm, rows, cols)
+    }
+
+    /// Creates a [SymmetricMatrixBuilder]; see [SymmetricMatrixBuilder::new].
+    pub fn symmetric_matrix_builder<'a>(
+        &'a self,
+        comm: &'a impl Communicator,
+        rows: Range<u32>,
+    ) -> HypreResult<SymmetricMatrixBuilder<'a>> {
+        SymmetricMatrixBuilder::new(self, comm, rows)
     }
 
     /// Creates a [CSRMatrix]; see [CSRMatrix::new].
@@ -173,13 +189,23 @@ impl HypreContext<'_> {
         )
     }
 
-    /// Creates an [IJVector]; see [IJVector::new].
-    pub fn ij_vector<'a>(
+    /// Creates a [LocalVectorBuilder]; see [LocalVectorBuilder::new].
+    pub fn local_vector_builder<'a>(
         &'a self,
         comm: &'a impl Communicator,
         rows: Range<u32>,
-    ) -> HypreResult<IJVector<'a>> {
-        IJVector::new(self, comm, rows)
+    ) -> HypreResult<LocalVectorBuilder<'a>> {
+        LocalVectorBuilder::new(self, comm, rows)
+    }
+
+    /// Creates a [DistributedVectorBuilder]; see
+    /// [DistributedVectorBuilder::new].
+    pub fn distributed_vector_builder<'a>(
+        &'a self,
+        comm: &'a impl Communicator,
+        rows: Range<u32>,
+    ) -> HypreResult<DistributedVectorBuilder<'a>> {
+        DistributedVectorBuilder::new(self, comm, rows)
     }
 
     /// Creates a [PCGSolver]; see [PCGSolver::new].

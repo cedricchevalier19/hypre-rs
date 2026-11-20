@@ -29,11 +29,11 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     // Each element (i - 1, i) adds the stiffness matrix [[1, -1], [-1, 1]],
     // with both triangles, to the rows it touches; some of them belong to
     // the previous MPI rank. A unit diagonal term makes the matrix definite.
-    let mut ij = ctx.ij_matrix(&comm, rows.clone(), rows.clone())?;
+    let mut ij = ctx.distributed_matrix_builder(&comm, rows.clone(), rows.clone())?;
     for i in rows.clone() {
-        ij.add_elements([(i, i, 1.0)])?;
+        ij.add([(i, i, 1.0)])?;
         if i > 0 {
-            ij.add_elements([
+            ij.add([
                 (i - 1, i - 1, 1.0),
                 (i - 1, i, -1.0),
                 (i, i - 1, -1.0),
@@ -50,14 +50,14 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     }
 
     // An advection term breaks the symmetry: the conversion fails.
-    let mut ij = ctx.ij_matrix(&comm, rows.clone(), rows.clone())?;
+    let mut ij = ctx.local_matrix_builder(&comm, rows.clone(), rows.clone())?;
     for i in rows.clone() {
-        ij.add_elements([(i, i, 2.0)])?;
+        ij.add([(i, i, 2.0)])?;
         if i > 0 {
-            ij.add_elements([(i, i - 1, -1.5)])?;
+            ij.add([(i, i - 1, -1.5)])?;
         }
         if i + 1 < N {
-            ij.add_elements([(i, i + 1, -0.5)])?;
+            ij.add([(i, i + 1, -0.5)])?;
         }
     }
     match SymmetricMatrix::try_from(ij.assemble()?) {

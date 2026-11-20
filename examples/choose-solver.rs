@@ -63,10 +63,12 @@ fn make_solver<'a>(
             let config = AMGSolverConfigBuilder::default().tol(tol).build()?;
             ctx.amg_solver(comm, config)?.into()
         }
-        other => return Err(format!(
+        other => {
+            return Err(format!(
             "unknown solver {other:?}: expected gmres, flexgmres, lgmres, cogmres, bicgstab or amg"
         )
-        .into()),
+            .into())
+        }
     })
 }
 
@@ -81,9 +83,9 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
 
     // The 1D Laplacian tridiag(-1, 2, -1), and b = A * [1, ..., 1].
     let rows = distribute_rows(&comm, N);
-    let mut a = ctx.symmetric_matrix(&comm, rows.clone())?;
-    a.add_elements(rows.clone().map(|i| (i, i, 2.0)))?;
-    a.add_elements(rows.clone().filter(|&i| i > 0).map(|i| (i, i - 1, -1.0)))?;
+    let mut a = ctx.symmetric_matrix_builder(&comm, rows.clone())?;
+    a.add(rows.clone().map(|i| (i, i, 2.0)))?;
+    a.add(rows.clone().filter(|&i| i > 0).map(|i| (i, i - 1, -1.0)))?;
     let a = a.assemble()?;
     let b = ParVector::from_fn(&ctx, &comm, rows.clone(), |i| {
         if i == 0 || i == N - 1 {

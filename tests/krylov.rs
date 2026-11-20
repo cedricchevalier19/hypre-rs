@@ -108,14 +108,14 @@ fn krylov_solvers() -> Result<(), Box<dyn std::error::Error>> {
     {
         let rows = hypre_rs::distribute_rows(&comm, N);
 
-        let mut ij = ctx.ij_matrix(&comm, rows.clone(), rows.clone())?;
+        let mut ij = ctx.local_matrix_builder(&comm, rows.clone(), rows.clone())?;
         for i in rows.clone() {
-            ij.add_elements([(i, i, 2.0)])?;
+            ij.add([(i, i, 2.0)])?;
             if i > 0 {
-                ij.add_elements([(i, i - 1, LOWER)])?;
+                ij.add([(i, i - 1, LOWER)])?;
             }
             if i + 1 < N {
-                ij.add_elements([(i, i + 1, UPPER)])?;
+                ij.add([(i, i + 1, UPPER)])?;
             }
         }
         let a = ij.assemble()?;
@@ -147,12 +147,12 @@ fn krylov_solvers() -> Result<(), Box<dyn std::error::Error>> {
 
         // A symmetric matrix is a Matrix: general solvers accept it.
         // tridiag(-1, 2, -1) * [1, ..., 1] = [1, 0, ..., 0, 1].
-        let mut s = ctx.symmetric_matrix(&comm, rows.clone())?;
-        s.add_elements(rows.clone().map(|i| (i, i, 2.0)))?;
-        s.add_elements(rows.clone().filter(|&i| i > 0).map(|i| (i, i - 1, -1.0)))?;
+        let mut s = ctx.symmetric_matrix_builder(&comm, rows.clone())?;
+        s.add(rows.clone().map(|i| (i, i, 2.0)))?;
+        s.add(rows.clone().filter(|&i| i > 0).map(|i| (i, i - 1, -1.0)))?;
         let s = s.assemble()?;
-        let mut b = ctx.ij_vector(&comm, rows.clone())?;
-        b.add_elements(
+        let mut b = ctx.local_vector_builder(&comm, rows.clone())?;
+        b.add(
             rows.clone()
                 .map(|i| (i, if i == 0 || i == N - 1 { 1.0 } else { 0.0 })),
         )?;

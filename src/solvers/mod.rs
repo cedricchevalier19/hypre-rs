@@ -117,9 +117,9 @@ pub trait LinearSolver {
 /// # let ctx = hypre_rs::initialize(&universe)?;
 /// let rows = hypre_rs::distribute_rows(&comm, 10);
 /// // Upper bidiagonal, not symmetric: 2 on the diagonal, -1 above.
-/// let mut a = ctx.ij_matrix(&comm, rows.clone(), rows.clone())?;
-/// a.add_elements(rows.clone().map(|i| (i, i, 2.0)))?;
-/// a.add_elements(rows.clone().filter(|&i| i < 9).map(|i| (i, i + 1, -1.0)))?;
+/// let mut a = ctx.local_matrix_builder(&comm, rows.clone(), rows.clone())?;
+/// a.add(rows.clone().map(|i| (i, i, 2.0)))?;
+/// a.add(rows.clone().filter(|&i| i < 9).map(|i| (i, i + 1, -1.0)))?;
 /// let a = a.assemble()?;
 ///
 /// // b = A * [1, ..., 1]
