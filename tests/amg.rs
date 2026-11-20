@@ -90,10 +90,16 @@ fn amg_solver() -> Result<(), Box<dyn std::error::Error>> {
             .build()?;
         let solver = ctx.amg_solver(&comm, config)?;
         let mut x = ParVector::zeros(&ctx, &comm, rows.clone())?;
-        assert!(matches!(
-            solver.solve(&a, &b, &mut x),
-            Err(HypreError::HypreConvError)
-        ));
+        // The error keeps the status: one cycle, residual above the tolerance.
+        let result = solver.solve(&a, &b, &mut x);
+        assert!(
+            matches!(
+                result,
+                Err(HypreError::NotConverged(status))
+                    if !status.converged && status.num_iters == 1 && status.res_num > 1e-10
+            ),
+            "{result:?}"
+        );
     }
     {
         // Every field that hypre can read back round-trips.

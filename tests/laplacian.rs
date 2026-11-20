@@ -47,13 +47,20 @@ fn laplacian_solution_values() -> Result<(), Box<dyn std::error::Error>> {
             .max_iters(1)
             .build()?;
         let solver = ctx.pcg_solver(&comm, config)?;
-        assert!(matches!(
-            solver.solve(&a, &b, &mut x),
-            Err(HypreError::HypreConvError)
-        ));
+        // The error keeps the status: one iteration, residual above the
+        // tolerance.
+        let result = solver.solve(&a, &b, &mut x);
+        assert!(
+            matches!(
+                result,
+                Err(HypreError::NotConverged(status))
+                    if !status.converged && status.num_iters == 1 && status.res_num > 1e-12
+            ),
+            "{result:?}"
+        );
 
         // In exact arithmetic CG converges in at most N iterations; a solve
-        // that does not converge within max_iters returns HypreConvError.
+        // that does not converge within max_iters returns NotConverged.
         let config = PCGSolverConfigBuilder::default()
             .tol(1e-12)
             .max_iters(N as usize)

@@ -13,6 +13,7 @@ mod tests;
 use std::fmt;
 use std::fmt::Formatter;
 
+use crate::error::HypreError;
 use crate::matrix::{Matrix, SymmetricMatrix};
 use crate::vector::ParVector;
 use crate::HypreResult;
@@ -55,6 +56,28 @@ impl fmt::Display for IterativeSolverStatus {
     }
 }
 
+/// Turns the error code of a hypre solve into its result: a convergence
+/// failure alone becomes [HypreError::NotConverged] with the `status`
+/// reached, and other errors are mapped as usual.
+pub(crate) fn solve_result(
+    code: hypre_sys::HYPRE_Int,
+    status: IterativeSolverStatus,
+) -> HypreResult<IterativeSolverStatus> {
+    if code == 0 {
+        return Ok(status);
+    }
+    let error = HypreError::new(code); // clears hypre's error flag
+    if code == hypre_sys::HYPRE_ERROR_CONV as hypre_sys::HYPRE_Int {
+        // Some solvers (BiCGSTAB) cannot report convergence themselves.
+        Err(HypreError::NotConverged(IterativeSolverStatus {
+            converged: false,
+            ..status
+        }))
+    } else {
+        Err(error)
+    }
+}
+
 /// Solver for general linear systems.
 ///
 /// They accept any [Matrix], including a [SymmetricMatrix] and, when the
@@ -67,9 +90,9 @@ pub trait LinearSolver {
     ///
     /// # Errors
     ///
-    /// [HypreError::HypreConvError](crate::HypreError::HypreConvError) if
-    /// the solver did not converge within its maximum number of iterations,
-    /// or another error returned by hypre.
+    /// [HypreError::NotConverged], with the status reached, if the solver
+    /// did not converge within its maximum number of iterations, or another
+    /// error returned by hypre.
     fn solve<M: Matrix + ?Sized>(
         &self,
         mat: &M,

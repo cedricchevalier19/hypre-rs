@@ -131,12 +131,16 @@ fn krylov_solvers() -> Result<(), Box<dyn std::error::Error>> {
         // Too few iterations: hypre reports a convergence error.
         for solver in solvers(&ctx, &comm, 1e-12, 1)? {
             let mut x = ParVector::zeros(&ctx, &comm, rows.clone())?;
+            // The error keeps the status: one iteration, residual above the
+            // tolerance.
+            let result = solver.solve(&a, &b, &mut x);
             assert!(
                 matches!(
-                    solver.solve(&a, &b, &mut x),
-                    Err(HypreError::HypreConvError)
+                    result,
+                    Err(HypreError::NotConverged(status))
+                        if !status.converged && status.num_iters == 1 && status.res_num > 1e-12
                 ),
-                "{solver:?}"
+                "{solver:?}: {result:?}"
             );
         }
         drop(a);
