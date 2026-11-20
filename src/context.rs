@@ -1,8 +1,6 @@
 //! The [HypreContext]: hypre initialization, finalization and object creation.
 
-use crate::matrix::{
-    CSRMatrix, DistributedMatrixBuilder, LocalMatrixBuilder, SymmetricMatrixBuilder,
-};
+use crate::matrix::{DistributedMatrixBuilder, LocalMatrixBuilder, SymmetricMatrixBuilder};
 use crate::preconditioners::{
     AMGPreconditioner, AMGPreconditionerConfig, SymmetricAMGPreconditioner,
     SymmetricAMGPreconditionerConfig,
@@ -40,7 +38,7 @@ static INITIALIZED: AtomicBool = AtomicBool::new(false);
 /// [HypreContext::distributed_matrix_builder],
 /// [HypreContext::symmetric_matrix_builder],
 /// [HypreContext::local_vector_builder],
-/// [HypreContext::distributed_vector_builder], [HypreContext::csr_matrix],
+/// [HypreContext::distributed_vector_builder],
 /// [HypreContext::pcg_solver], [HypreContext::gmres_solver] and the other
 /// solvers) or with their `new`
 /// constructor.
@@ -168,25 +166,6 @@ impl HypreContext<'_> {
         rows: Range<u32>,
     ) -> HypreResult<SymmetricMatrixBuilder<'a>> {
         SymmetricMatrixBuilder::new(self, comm, rows)
-    }
-
-    /// Creates a [CSRMatrix]; see [CSRMatrix::new].
-    pub fn csr_matrix<'a>(
-        &'a self,
-        comm: &'a impl Communicator,
-        global_num_rows: usize,
-        global_num_cols: usize,
-        row_starts: &[usize],
-        col_starts: &[usize],
-    ) -> HypreResult<CSRMatrix<'a>> {
-        CSRMatrix::new(
-            self,
-            comm,
-            global_num_rows,
-            global_num_cols,
-            row_starts,
-            col_starts,
-        )
     }
 
     /// Creates a [LocalVectorBuilder]; see [LocalVectorBuilder::new].

@@ -80,6 +80,7 @@ number of MPI ranks and checks its own result:
 | [`gmres-convection-diffusion`](examples/gmres-convection-diffusion.rs) | A non-symmetric system with GMRES and BiCGSTAB, preconditioned by Jacobi or multigrid |
 | [`amg-solver`](examples/amg-solver.rs) | Algebraic multigrid as a solver: named options, reading the configuration back, handling non-convergence and restarting |
 | [`choose-solver`](examples/choose-solver.rs) | Choosing the solver at runtime, from the command line |
+| [`newton`](examples/newton.rs) | Newton's method on a nonlinear problem, refilling the Jacobian and the residual with the same pattern at every iteration |
 | [`check-symmetry`](examples/check-symmetry.rs) | Checking that a matrix built with both triangles is symmetric, to use CG |
 
 ```bash

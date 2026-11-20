@@ -48,55 +48,72 @@ impl<'h> IjVector<'h> {
 
     /// Adds `values[k]` to entry `indices[k]`, which may be on another rank.
     fn add(&mut self, indices: &[HYPRE_BigInt], values: &[HYPRE_Complex]) -> HypreResult<()> {
-        unsafe {
-            check_hypre!(HYPRE_IJVectorAddToValues(
-                self.internal,
-                indices.len().try_into()?,
-                indices.as_ptr(),
-                values.as_ptr(),
-            ));
-        }
-        Ok(())
+        add_values(self.internal, indices, values)
     }
 
     /// Sets entry `indices[k]`, which must be local, to `values[k]`.
     fn set(&mut self, indices: &[HYPRE_BigInt], values: &[HYPRE_Complex]) -> HypreResult<()> {
-        unsafe {
-            check_hypre!(HYPRE_IJVectorSetValues(
-                self.internal,
-                indices.len().try_into()?,
-                indices.as_ptr(),
-                values.as_ptr(),
-            ));
-        }
-        Ok(())
+        set_values(self.internal, indices, values)
     }
 
-    /// Assembles the vector and hands its ParVector object over.
-    fn assemble(self) -> HypreResult<ParVector<'h>> {
+    /// Assembles the vector into a [ParVector], which takes the IJ handle
+    /// over (to refill the values later).
+    fn assemble(mut self) -> HypreResult<ParVector<'h>> {
         let mut par: *mut c_void = null_mut();
         unsafe {
             check_hypre!(HYPRE_IJVectorAssemble(self.internal));
             check_hypre!(HYPRE_IJVectorGetObject(self.internal, &mut par));
-            // `self` is dropped on return, and HYPRE_IJVectorDestroy would
-            // also destroy the ParVector. With object type -1 it only frees
-            // the IJ interface, so the returned ParVector becomes the sole
-            // owner.
-            check_hypre!(HYPRE_IJVectorSetObjectType(self.internal, -1));
         }
+        // From here on the ParVector destroys the handle, not `self`.
+        let ij = std::mem::replace(&mut self.internal, null_mut());
         Ok(ParVector {
-            internal: par as HYPRE_ParVector,
-            // `self` implements Drop: its fields cannot be moved out.
+            ij,
+            par: par as HYPRE_ParVector,
             rows: self.rows.clone(),
             _hypre: PhantomData,
         })
     }
 }
 
+/// Adds `values[k]` to entry `indices[k]` of `ij`, which may be on another
+/// rank.
+pub(super) fn add_values(
+    ij: HYPRE_IJVector,
+    indices: &[HYPRE_BigInt],
+    values: &[HYPRE_Complex],
+) -> HypreResult<()> {
+    unsafe {
+        check_hypre!(HYPRE_IJVectorAddToValues(
+            ij,
+            indices.len().try_into()?,
+            indices.as_ptr(),
+            values.as_ptr(),
+        ));
+    }
+    Ok(())
+}
+
+/// Sets entry `indices[k]` of `ij`, which must be local, to `values[k]`.
+pub(super) fn set_values(
+    ij: HYPRE_IJVector,
+    indices: &[HYPRE_BigInt],
+    values: &[HYPRE_Complex],
+) -> HypreResult<()> {
+    unsafe {
+        check_hypre!(HYPRE_IJVectorSetValues(
+            ij,
+            indices.len().try_into()?,
+            indices.as_ptr(),
+            values.as_ptr(),
+        ));
+    }
+    Ok(())
+}
+
 impl_hypre_drop!(IjVector<'_>, internal, HYPRE_IJVectorDestroy);
 
 /// Converts `(index, value)` entries to hypre's types.
-fn convert<Id, V>(
+pub(super) fn convert<Id, V>(
     entries: impl IntoIterator<Item = (Id, V)>,
 ) -> HypreResult<(Vec<HYPRE_BigInt>, Vec<HYPRE_Complex>)>
 where
