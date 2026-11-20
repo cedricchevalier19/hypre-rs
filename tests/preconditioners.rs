@@ -1,6 +1,6 @@
 //! Preconditioned Krylov solvers, on any number of MPI ranks.
 
-use hypre_rs::matrix::IJMatrix;
+use hypre_rs::matrix::CSRMatrix;
 use hypre_rs::preconditioners::{
     AMGPreconditionerConfigBuilder, JacobiPreconditioner, Preconditioner,
     SymmetricAMGPreconditionerConfigBuilder, SymmetricPreconditioner, SymmetricSmoother,
@@ -50,7 +50,7 @@ fn cg(
     ctx: &HypreContext<'_>,
     comm: &SimpleCommunicator,
     rows: Range<u32>,
-    a: &SymmetricMatrix<IJMatrix<'_>>,
+    a: &SymmetricMatrix<CSRMatrix<'_>>,
     preconditioner: Option<SymmetricPreconditioner<'_>>,
 ) -> TestResult<IterativeSolverStatus> {
     let what = format!("CG with {preconditioner:?}");
@@ -157,6 +157,7 @@ fn preconditioners() -> TestResult {
         let mut a = ctx.symmetric_matrix(&comm, rows.clone())?;
         a.add_elements(rows.clone().map(|i| (i, i, 2.0)))?;
         a.add_elements(rows.clone().filter(|&i| i > 0).map(|i| (i, i - 1, -1.0)))?;
+        let a = a.assemble()?;
 
         let plain = cg(&ctx, &comm, rows.clone(), &a, None)?;
         cg(
@@ -246,7 +247,7 @@ fn preconditioners() -> TestResult {
                 ij.add_elements([(i, i + 1, UPPER)].into_iter())?;
             }
         }
-        let a = ij;
+        let a = ij.assemble()?;
         // A * [1, ..., 1]
         let b = vector(&ctx, &comm, rows.clone(), |i| {
             2.0 + if i > 0 { LOWER } else { 0.0 } + if i + 1 < N { UPPER } else { 0.0 }

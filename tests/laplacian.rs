@@ -32,6 +32,7 @@ fn laplacian_solution_values() -> Result<(), Box<dyn std::error::Error>> {
             entries.push((i, i, 2.0));
         }
         a.add_elements(entries.into_iter())?;
+        let a = a.assemble()?;
 
         let mut b = ctx.ij_vector(&comm, rows.clone())?;
         b.add_elements(

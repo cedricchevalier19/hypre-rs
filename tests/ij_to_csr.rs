@@ -26,9 +26,9 @@ fn ij_to_csr_conversion_outlives_ij() -> Result<(), Box<dyn std::error::Error>> 
         // Same through a symmetric matrix, which CG accepts.
         let mut matrix = SymmetricMatrix::new(&ctx, &comm, b..e)?;
         matrix.add_elements((b..e).map(|i| (i, i, 2.0f64)))?;
-        // A CSR matrix can no longer be modified: it has no `add_elements`
-        // (checked by the compiler; see the `into_csr` doctest).
-        let matrix = matrix.into_csr()?;
+        // Solvers need it assembled; it then has no `add_elements` (checked
+        // by the compiler; see the `SymmetricMatrix::assemble` doctest).
+        let matrix = matrix.assemble()?;
 
         let mut rhs = ctx.ij_vector(&comm, b..e)?;
         rhs.add_elements((b..e).map(|i| (i, 2.0f64)))?;

@@ -250,22 +250,37 @@ impl<'h> IJMatrix<'h> {
     }
 }
 
-impl sealed::AsParCSR for IJMatrix<'_> {
-    /// Assembles the matrix and returns its ParCSR object.
+impl<'h> IJMatrix<'h> {
+    /// Assembles the matrix into a [CSRMatrix], the format hypre's solvers
+    /// use; same as `CSRMatrix::try_from`.
     ///
-    /// Takes `&self`: assembling changes hypre's state behind the handle,
-    /// not any Rust data.
-    fn as_parcsr(&self) -> HypreResult<HYPRE_ParCSRMatrix> {
-        let mut out: *mut c_void = null_mut();
-        unsafe {
-            check_hypre!(HYPRE_IJMatrixAssemble(self.internal_matrix));
-            check_hypre!(HYPRE_IJMatrixGetObject(self.internal_matrix, &mut out));
-        }
-        Ok(out as HYPRE_ParCSRMatrix)
+    /// An `IJMatrix` is not a [Matrix]: it must be assembled before a solver
+    /// can use it, and cannot be modified afterwards. Assembly exchanges the
+    /// entries added for rows owned by other MPI ranks, so it is collective.
+    ///
+    /// ```compile_fail
+    /// # fn main() -> Result<(), Box<dyn std::error::Error>> {
+    /// use hypre_rs::solvers::{LinearSolver, Solver};
+    /// # let universe = mpi::initialize().ok_or("MPI was already initialized (or finalized) in this process")?;
+    /// # let comm = universe.world();
+    /// # let ctx = hypre_rs::initialize(&universe)?;
+    /// let mut a = ctx.ij_matrix(&comm, 0..1, 0..1)?;
+    /// a.add_elements([(0u32, 0u32, 1.0)].into_iter())?;
+    /// let b = ctx.ij_vector(&comm, 0..1)?;
+    /// let mut x = ctx.ij_vector(&comm, 0..1)?;
+    /// let solver = Solver::GMRES(ctx.gmres_solver(&comm, Default::default())?);
+    /// solver.solve(&a, &b, &mut x)?; // `a` is not assembled
+    /// # Ok(())
+    /// # }
+    /// ```
+    ///
+    /// # Errors
+    ///
+    /// The error returned by hypre.
+    pub fn assemble(self) -> HypreResult<CSRMatrix<'h>> {
+        CSRMatrix::try_from(self)
     }
 }
-
-impl Matrix for IJMatrix<'_> {}
 
 impl_hypre_drop!(IJMatrix<'_>, internal_matrix, HYPRE_IJMatrixDestroy);
 
@@ -295,31 +310,32 @@ pub(crate) mod sealed {
     use crate::HypreResult;
     use hypre_sys::HYPRE_ParCSRMatrix;
 
-    /// Gives hypre's solvers the ParCSR object of a matrix. Not nameable
-    /// outside the crate, so only the crate's types implement [Matrix].
+    /// Gives hypre's solvers the ParCSR object of an assembled matrix. Not
+    /// nameable outside the crate, so only the crate's types implement
+    /// [Matrix].
     ///
     /// [Matrix]: super::Matrix
     pub trait AsParCSR {
-        /// Returns the ParCSR object, assembling the matrix if needed.
+        /// Returns the ParCSR object.
         fn as_parcsr(&self) -> HypreResult<HYPRE_ParCSRMatrix>;
     }
 }
 
-/// A distributed matrix that hypre's solvers accept.
+/// An assembled distributed matrix, which hypre's solvers accept.
 ///
-/// Implemented by [IJMatrix] (assembled when a solver uses it),
-/// [CSRMatrix] and [SymmetricMatrix]. The trait is sealed: other types
-/// cannot implement it. It is object safe, so `&dyn Matrix` works when the
-/// storage is chosen at runtime.
+/// Implemented by [CSRMatrix] and by a [SymmetricMatrix] of one. An
+/// [IJMatrix] is not a `Matrix`: [IJMatrix::assemble] it first. The trait is
+/// sealed: other types cannot implement it. It is object safe, so
+/// `&dyn Matrix` works when the storage is chosen at runtime.
 pub trait Matrix: sealed::AsParCSR {
     /// Returns whether the matrix is symmetric: square, with
     /// `|a_ij - a_ji| <= tol * max(|a_ij|, |a_ji|)` for all `i`, `j`.
     ///
     /// `tol = 0.0` asks for exact symmetry. A missing entry counts as 0.
     ///
-    /// Assembles the matrix and exchanges every off-diagonal entry with the
-    /// MPI rank that owns its transposed entry, so it is collective and
-    /// costs about as much as a transposition.
+    /// Exchanges every off-diagonal entry with the MPI rank that owns its
+    /// transposed entry, so it is collective and costs about as much as a
+    /// transposition.
     ///
     /// # Errors
     ///
@@ -341,8 +357,9 @@ pub trait Matrix: sealed::AsParCSR {
     /// // Upper bidiagonal: not symmetric.
     /// ij.add_elements(rows.clone().map(|i| (i, i, 2.0)))?;
     /// ij.add_elements(rows.filter(|&i| i < 9).map(|i| (i, i + 1, -1.0)))?;
-    /// assert!(!ij.is_symmetric(0.0)?);
-    /// # drop(ij);
+    /// let matrix = ij.assemble()?;
+    /// assert!(!matrix.is_symmetric(0.0)?);
+    /// # drop(matrix);
     /// # ctx.finalize()?;
     /// # Ok(())
     /// # }
@@ -489,14 +506,17 @@ pub trait Matrix: sealed::AsParCSR {
 /// (made by [SymmetricMatrix::new] or
 /// [HypreContext::symmetric_matrix]) is symmetric by construction: entries
 /// are given for the lower triangle only (`col <= row`) and each
-/// off-diagonal entry `(i, j, v)` is also added at `(j, i)`. Other matrices
-/// become symmetric ones after a runtime check ([SymmetricMatrix::try_from])
-/// or on the caller's word ([SymmetricMatrix::from_matrix_unchecked]).
+/// off-diagonal entry `(i, j, v)` is also added at `(j, i)`.
+/// [SymmetricMatrix::assemble] then turns it into a
+/// `SymmetricMatrix<CSRMatrix>`. Assembled matrices become symmetric ones
+/// after a runtime check ([SymmetricMatrix::try_from]), and any matrix on
+/// the caller's word ([SymmetricMatrix::from_matrix_unchecked]).
 ///
 /// Solvers that need a symmetric matrix, such as
-/// [PCGSolver](crate::solvers::PCGSolver), only accept this type. It is also
-/// a [Matrix], so every solver accepts it, and it dereferences to `M` (read
-/// only: changing `M` could break the symmetry).
+/// [PCGSolver](crate::solvers::PCGSolver), only accept this type. Once
+/// assembled, it is also a [Matrix], so every solver accepts it. It
+/// dereferences to `M` (read only: changing `M` could break the
+/// symmetry).
 ///
 /// # Example
 ///
@@ -515,6 +535,7 @@ pub trait Matrix: sealed::AsParCSR {
 /// // Diagonal and sub-diagonal; the super-diagonal is added by symmetry.
 /// laplacian.add_elements(rows.clone().map(|i| (i, i, 2.0)))?;
 /// laplacian.add_elements(rows.filter(|&i| i > 0).map(|i| (i, i - 1, -1.0)))?;
+/// let laplacian = laplacian.assemble()?;
 /// assert!(laplacian.is_symmetric(0.0)?);
 /// # drop(laplacian);
 /// # ctx.finalize()?;
@@ -577,10 +598,9 @@ impl<'h> SymmetricMatrix<IJMatrix<'h>> {
         self.matrix.add_to_values(&rows, &cols, &values)
     }
 
-    /// Converts the matrix to the [CSRMatrix] format; see
-    /// `TryFrom<IJMatrix> for CSRMatrix`.
+    /// Assembles the matrix into a [CSRMatrix]; see [IJMatrix::assemble].
     ///
-    /// Assembles the matrix, so it is collective. A
+    /// Solvers need an assembled matrix. Assembly is collective. A
     /// `SymmetricMatrix<CSRMatrix>` has no `add_elements`: it cannot be
     /// modified afterwards.
     ///
@@ -591,14 +611,14 @@ impl<'h> SymmetricMatrix<IJMatrix<'h>> {
     /// # let ctx = hypre_rs::initialize(&universe)?;
     /// let mut matrix = ctx.symmetric_matrix(&comm, 0..1)?;
     /// matrix.add_elements([(0u32, 0u32, 1.0)].into_iter())?;
-    /// let mut csr = matrix.into_csr()?;
+    /// let mut csr = matrix.assemble()?;
     /// csr.add_elements([(0u32, 0u32, 1.0)].into_iter())?; // no such method
     /// # Ok(())
     /// # }
     /// ```
-    pub fn into_csr(self) -> HypreResult<SymmetricMatrix<CSRMatrix<'h>>> {
+    pub fn assemble(self) -> HypreResult<SymmetricMatrix<CSRMatrix<'h>>> {
         Ok(SymmetricMatrix {
-            matrix: CSRMatrix::try_from(self.matrix)?,
+            matrix: self.matrix.assemble()?,
         })
     }
 }
@@ -622,13 +642,15 @@ impl<M: Matrix> SymmetricMatrix<M> {
             Err(HypreError::NotSymmetric)
         }
     }
+}
 
+impl<M> SymmetricMatrix<M> {
     /// Converts `matrix` without checking that it is symmetric.
     ///
     /// Use it when the matrix is known to be symmetric and the check of
     /// [SymmetricMatrix::try_from] (collective, about the cost of a
-    /// transposition) is not worth it. It neither communicates nor assembles
-    /// the matrix.
+    /// transposition) is not worth it, or for an [IJMatrix] that is not
+    /// assembled yet. It neither communicates nor assembles the matrix.
     ///
     /// This is not `unsafe`: an asymmetric matrix cannot cause undefined
     /// behavior. But solvers then work on a matrix that breaks their
@@ -692,24 +714,14 @@ impl<M: Matrix> SymmetricMatrix<M> {
 ///         ij.add_elements([(i, i - 1, -1.0), (i - 1, i, -1.0)].into_iter())?;
 ///     }
 /// }
-/// let laplacian = SymmetricMatrix::try_from(ij)?;
+/// let laplacian = SymmetricMatrix::try_from(ij.assemble()?)?;
 /// # drop(laplacian);
 /// # ctx.finalize()?;
 /// # Ok(())
 /// # }
 /// ```
-impl<'h> TryFrom<IJMatrix<'h>> for SymmetricMatrix<IJMatrix<'h>> {
-    type Error = HypreError;
-
-    fn try_from(matrix: IJMatrix<'h>) -> Result<Self, Self::Error> {
-        Self::try_from_with_tolerance(matrix, 0.0)
-    }
-}
-
-/// Checks that the matrix is exactly symmetric, at runtime; see
-/// `TryFrom<IJMatrix>`.
-// One impl per type: a generic `impl<M: Matrix> TryFrom<M>` conflicts with
-// core's blanket `TryFrom<U> for T where U: Into<T>`.
+// Not generic: `impl<M: Matrix> TryFrom<M>` conflicts with core's blanket
+// `TryFrom<U> for T where U: Into<T>`. Add one impl per assembled matrix type.
 impl<'h> TryFrom<CSRMatrix<'h>> for SymmetricMatrix<CSRMatrix<'h>> {
     type Error = HypreError;
 

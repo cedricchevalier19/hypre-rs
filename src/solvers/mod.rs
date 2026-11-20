@@ -93,6 +93,7 @@ pub trait LinearSolver {
 /// let mut a = ctx.ij_matrix(&comm, rows.clone(), rows.clone())?;
 /// a.add_elements(rows.clone().map(|i| (i, i, 2.0)))?;
 /// a.add_elements(rows.clone().filter(|&i| i < 9).map(|i| (i, i + 1, -1.0)))?;
+/// let a = a.assemble()?;
 ///
 /// // b = A * [1, ..., 1]
 /// let mut b = ctx.ij_vector(&comm, rows.clone())?;

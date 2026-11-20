@@ -38,6 +38,9 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
         nnz_buffer.clear();
     }
 
+    // Solvers need an assembled matrix; it cannot be modified afterwards.
+    let matrix = matrix.assemble()?;
+
     let mut rhs = ctx.ij_vector(&mpi_comm, local_rows.clone())?;
     rhs.add_elements((local_begin..local_end).map(|i| (i, i as f64)))?;
 

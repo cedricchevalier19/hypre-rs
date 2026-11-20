@@ -11,7 +11,8 @@ use std::ops::Range;
 /// Global number of rows; not a multiple of 2 or 3, so ranks get uneven rows.
 const N: u32 = 10;
 
-/// tridiag(-1, 2, -1) with both triangles given, plus `extra` entries. The
+/// tridiag(-1, 2, -1) with both triangles given, plus `extra` entries,
+/// assembled. The
 /// coupling between the first local row and the previous one is added by
 /// this rank to a row owned by the previous rank.
 fn laplacian<'a>(
@@ -19,7 +20,7 @@ fn laplacian<'a>(
     comm: &'a SimpleCommunicator,
     rows: Range<u32>,
     extra: &[(u32, u32, f64)],
-) -> Result<IJMatrix<'a>, HypreError> {
+) -> Result<CSRMatrix<'a>, HypreError> {
     let mut ij = ctx.ij_matrix(comm, rows.clone(), rows.clone())?;
     for i in rows.clone() {
         ij.add_elements([(i, i, 2.0)].into_iter())?;
@@ -34,7 +35,7 @@ fn laplacian<'a>(
             .copied()
             .filter(|(row, _, _)| rows.contains(row)),
     )?;
-    Ok(ij)
+    ij.assemble()
 }
 
 #[test]
@@ -70,12 +71,11 @@ fn symmetry_check() -> Result<(), Box<dyn std::error::Error>> {
         }
         drop((a, x, solver));
 
-        // The check also works on the CSR format.
-        let ij = laplacian(&ctx, &comm, rows.clone(), &[])?;
-        assert!(ij.is_symmetric(0.0)?);
+        // `assemble` is the same as `CSRMatrix::try_from`.
+        let mut ij = ctx.ij_matrix(&comm, rows.clone(), rows.clone())?;
+        ij.add_elements(rows.clone().map(|i| (i, i, 2.0)))?;
         let csr = CSRMatrix::try_from(ij)?;
         assert!(csr.is_symmetric(0.0)?);
-        let csr = SymmetricMatrix::try_from(csr)?;
         drop(csr);
 
         // An entry without its transposed one, across ranks when size > 1.
@@ -120,14 +120,15 @@ fn symmetry_check() -> Result<(), Box<dyn std::error::Error>> {
         let cols = (2 * rank * N / size)..(2 * (rank + 1) * N / size);
         let mut ij = IJMatrix::new(&ctx, &comm, rows.clone(), cols)?;
         ij.add_elements(rows.clone().map(|i| (i, i, 1.0)))?;
-        assert!(!ij.is_symmetric(0.0)?);
+        assert!(!ij.assemble()?.is_symmetric(0.0)?);
 
-        // A matrix built from its lower triangle is exactly symmetric. It is
-        // a Matrix, also as a trait object.
+        // A matrix built from its lower triangle is exactly symmetric. Once
+        // assembled, it is a Matrix, also as a trait object.
         let mut s = ctx.symmetric_matrix(&comm, rows.clone())?;
         s.add_elements(rows.clone().map(|i| (i, i, 2.0)))?;
         s.add_elements(rows.clone().filter(|&i| i > 0).map(|i| (i, i - 1, -1.0)))?;
         s.add_elements(rows.clone().filter(|&i| i >= 3).map(|i| (i, i - 3, 0.25)))?;
+        let s = s.assemble()?;
         assert!(s.is_symmetric(0.0)?);
         let as_matrix: &dyn Matrix = &s;
         assert!(as_matrix.is_symmetric(0.0)?);

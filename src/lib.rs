@@ -28,6 +28,8 @@
 //! let mut matrix = ctx.symmetric_matrix(&mpi_comm, rows.clone())?;
 //! matrix.add_elements(rows.clone().map(|i| (i, i, 2.0)))?;
 //! matrix.add_elements(rows.clone().filter(|&i| i > 0).map(|i| (i, i - 1, -1.0)))?;
+//! // Solvers need an assembled matrix.
+//! let matrix = matrix.assemble()?;
 //!
 //! let mut rhs = ctx.ij_vector(&mpi_comm, rows.clone())?;
 //! rhs.add_elements(rows.clone().map(|i| (i, 1.0)))?;

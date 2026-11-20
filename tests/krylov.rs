@@ -125,7 +125,7 @@ fn krylov_solvers() -> Result<(), Box<dyn std::error::Error>> {
                 ij.add_elements([(i, i + 1, UPPER)].into_iter())?;
             }
         }
-        let a = ij;
+        let a = ij.assemble()?;
         assert!(!a.is_symmetric(0.0)?);
 
         let mut b = ctx.ij_vector(&comm, rows.clone())?;
@@ -154,6 +154,7 @@ fn krylov_solvers() -> Result<(), Box<dyn std::error::Error>> {
         let mut s = ctx.symmetric_matrix(&comm, rows.clone())?;
         s.add_elements(rows.clone().map(|i| (i, i, 2.0)))?;
         s.add_elements(rows.clone().filter(|&i| i > 0).map(|i| (i, i - 1, -1.0)))?;
+        let s = s.assemble()?;
         let mut b = ctx.ij_vector(&comm, rows.clone())?;
         b.add_elements(
             rows.clone()

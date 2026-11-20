@@ -44,6 +44,7 @@ hypre_solver! {
     /// let mut a = ctx.symmetric_matrix(&comm, rows.clone())?;
     /// a.add_elements(rows.clone().map(|i| (i, i, 2.0)))?;
     /// a.add_elements(rows.clone().filter(|&i| i > 0).map(|i| (i, i - 1, -1.0)))?;
+    /// let a = a.assemble()?;
     /// let mut b = ctx.ij_vector(&comm, rows.clone())?;
     /// b.add_elements(rows.clone().map(|i| (i, 1.0)))?;
     /// let mut x = ctx.ij_vector(&comm, rows.clone())?;
