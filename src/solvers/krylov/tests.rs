@@ -28,9 +28,9 @@ fn config_test() -> Result<(), Box<dyn std::error::Error>> {
 
         let my_parameters = PCGSolverConfigBuilder::default()
             .tol(1e-9)
-            .max_iters(500usize)
+            .max_iters(500)
             .two_norm(true)
-            .recompute_residual_period(8usize)
+            .recompute_residual_period(8)
             .build()?;
         let solver = PCGSolver::new(&ctx, &mpi_comm, my_parameters)?;
         let parameters = solver.current_config()?;
@@ -42,7 +42,7 @@ fn config_test() -> Result<(), Box<dyn std::error::Error>> {
         // `config` changes an existing solver; unset fields keep their value.
         let other_parameters = PCGSolverConfigBuilder::default()
             .tol(1e-3)
-            .max_iters(7usize)
+            .max_iters(7)
             .build()?;
         let solver = solver.config(other_parameters)?;
         let parameters = solver.current_config()?;
@@ -55,11 +55,11 @@ fn config_test() -> Result<(), Box<dyn std::error::Error>> {
             .tol(1e-4)
             .res_tol(1e-5)
             .conv_tol_fact(0.5)
-            .max_iters(42usize)
+            .max_iters(42)
             .two_norm(false)
             .rel_change(true)
-            .logging(1u32)
-            .print_level(2u32)
+            .logging(1)
+            .print_level(2)
             .build()?;
         let solver = solver.config(all_parameters)?;
         let parameters = solver.current_config()?;

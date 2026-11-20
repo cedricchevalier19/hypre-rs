@@ -4,7 +4,7 @@
 
 use hypre_rs::matrix::{CSRMatrix, IJMatrix};
 use hypre_rs::solvers::PCGSolverConfigBuilder;
-use hypre_rs::{HypreContext, HypreError, Matrix, SymmetricMatrix};
+use hypre_rs::{HypreContext, HypreError, Matrix, ParVector, SymmetricMatrix};
 use mpi::topology::{Communicator, SimpleCommunicator};
 use std::ops::Range;
 
@@ -23,9 +23,9 @@ fn laplacian<'a>(
 ) -> Result<CSRMatrix<'a>, HypreError> {
     let mut ij = ctx.ij_matrix(comm, rows.clone(), rows.clone())?;
     for i in rows.clone() {
-        ij.add_elements([(i, i, 2.0)].into_iter())?;
+        ij.add_elements([(i, i, 2.0)])?;
         if i > 0 {
-            ij.add_elements([(i, i - 1, -1.0), (i - 1, i, -1.0)].into_iter())?;
+            ij.add_elements([(i, i - 1, -1.0), (i - 1, i, -1.0)])?;
         }
     }
     // Extra entries are added once, by the rank owning their row.
@@ -46,8 +46,8 @@ fn symmetry_check() -> Result<(), Box<dyn std::error::Error>> {
     let comm = universe.world();
     let ctx = hypre_rs::initialize(&universe)?;
     {
-        let (rank, size) = (comm.rank() as u32, comm.size() as u32);
-        let rows = (rank * N / size)..((rank + 1) * N / size);
+        let rank = comm.rank();
+        let rows = hypre_rs::distribute_rows(&comm, N);
 
         // Symmetric: converts, and CG solves it. A * [1, ..., 1] = [1, 0, ..., 0, 1].
         let a = SymmetricMatrix::try_from(laplacian(&ctx, &comm, rows.clone(), &[])?)?;
@@ -57,9 +57,7 @@ fn symmetry_check() -> Result<(), Box<dyn std::error::Error>> {
                 .map(|i| (i, if i == 0 || i == N - 1 { 1.0 } else { 0.0 })),
         )?;
         let b = b.assemble()?;
-        let mut x = ctx.ij_vector(&comm, rows.clone())?;
-        x.add_elements(rows.clone().map(|i| (i, 0.0)))?;
-        let mut x = x.assemble()?;
+        let mut x = ParVector::zeros(&ctx, &comm, rows.clone())?;
         let config = PCGSolverConfigBuilder::default()
             .tol(1e-12)
             .max_iters(N as usize)
@@ -68,7 +66,7 @@ fn symmetry_check() -> Result<(), Box<dyn std::error::Error>> {
         let solver = ctx.pcg_solver(&comm, config)?;
         let status = solver.solve(&a, &b, &mut x)?;
         assert!(status.converged, "{status}");
-        for (i, v) in rows.clone().zip(x.get_values(rows.clone())?) {
+        for (i, v) in rows.clone().zip(x.local_values()?) {
             assert!((v - 1.0).abs() < 1e-8, "x[{i}] = {v}, expected 1");
         }
         drop((a, x, solver));
@@ -119,7 +117,7 @@ fn symmetry_check() -> Result<(), Box<dyn std::error::Error>> {
         drop(m);
 
         // Not square: N rows, 2 * N columns.
-        let cols = (2 * rank * N / size)..(2 * (rank + 1) * N / size);
+        let cols = hypre_rs::distribute_rows(&comm, 2 * N);
         let mut ij = IJMatrix::new(&ctx, &comm, rows.clone(), cols)?;
         ij.add_elements(rows.clone().map(|i| (i, i, 1.0)))?;
         assert!(!ij.assemble()?.is_symmetric(0.0)?);

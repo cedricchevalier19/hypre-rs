@@ -6,7 +6,9 @@ use std::marker::PhantomData;
 use std::ptr::null_mut;
 
 use crate::error::HypreError;
-use crate::solvers::{IterativeSolverStatus, LinearSolver};
+use crate::solvers::{
+    CoarsenType, ConvergeType, CycleType, InterpType, IterativeSolverStatus, LinearSolver, Smoother,
+};
 use crate::{HypreContext, HypreResult};
 use hypre_sys::*;
 
@@ -31,30 +33,28 @@ hypre_solver! {
     ///
     /// ```
     /// # fn main() -> Result<(), Box<dyn std::error::Error>> {
-    /// # use mpi::topology::Communicator;
-    /// use hypre_rs::solvers::AMGSolverConfigBuilder;
+    /// use hypre_rs::solvers::{AMGSolverConfigBuilder, CoarsenType, CycleType, Smoother};
+    /// use hypre_rs::ParVector;
     ///
     /// # let universe = mpi::initialize().ok_or("MPI was already initialized (or finalized) in this process")?;
     /// # let comm = universe.world();
     /// # let ctx = hypre_rs::initialize(&universe)?;
-    /// # let (rank, size) = (comm.rank() as u32, comm.size() as u32);
     /// // The 1D Laplacian tridiag(-1, 2, -1), from its lower triangle.
     /// let n = 100;
-    /// let rows = (rank * n / size)..((rank + 1) * n / size);
+    /// let rows = hypre_rs::distribute_rows(&comm, n);
     /// let mut a = ctx.symmetric_matrix(&comm, rows.clone())?;
     /// a.add_elements(rows.clone().map(|i| (i, i, 2.0)))?;
     /// a.add_elements(rows.clone().filter(|&i| i > 0).map(|i| (i, i - 1, -1.0)))?;
     /// let a = a.assemble()?;
-    /// let mut b = ctx.ij_vector(&comm, rows.clone())?;
-    /// b.add_elements(rows.clone().map(|i| (i, 1.0)))?;
-    /// let b = b.assemble()?;
-    /// let mut x = ctx.ij_vector(&comm, rows.clone())?;
-    /// x.add_elements(rows.clone().map(|i| (i, 0.0)))?;
-    /// let mut x = x.assemble()?;
+    /// let b = ParVector::from_fn(&ctx, &comm, rows.clone(), |_| 1.0)?;
+    /// let mut x = ParVector::zeros(&ctx, &comm, rows.clone())?;
     ///
     /// let config = AMGSolverConfigBuilder::default()
     ///     .tol(1e-10)
-    ///     .max_iters(100usize)
+    ///     .max_iters(100)
+    ///     .coarsen_type(CoarsenType::Pmis)
+    ///     .relax_type(Smoother::L1SymmetricGaussSeidel)
+    ///     .cycle_type(CycleType::W)
     ///     .build()?;
     /// let solver = ctx.amg_solver(&comm, config)?;
     /// let status = solver.solve(&a, &b, &mut x)?;
@@ -67,9 +67,8 @@ hypre_solver! {
     solver AMGSolver;
     /// Algebraic multigrid (BoomerAMG) configuration
     ///
-    /// The integer options (`coarsen_type`, `interp_type`, `relax_type`,
-    /// `cycle_type`, `converge_type`) take the values documented in hypre's
-    /// reference manual for the matching `HYPRE_BoomerAMGSet*` function.
+    /// The algorithm choices are enums: [CoarsenType], [InterpType],
+    /// [Smoother], [CycleType] and [ConvergeType].
     ///
     /// hypre has no getter for `min_iters`, `interp_type`, `relax_type`,
     /// `relax_order`, `relax_wt`, `num_sweeps` and `agg_num_levels`, which
@@ -103,26 +102,24 @@ hypre_solver! {
         trunc_factor: f64 => HYPRE_BoomerAMGSetTruncFactor,
         /// Maximum number of elements per row of the interpolation
         p_max_elmts: usize => HYPRE_BoomerAMGSetPMaxElmts,
-        /// Coarsening algorithm (6: Falgout, 8: PMIS, 10: HMIS, ...)
-        coarsen_type: u32 => HYPRE_BoomerAMGSetCoarsenType,
-        /// Interpolation operator (0: classical, 6: extended+i, ...)
-        interp_type: u32 => HYPRE_BoomerAMGSetInterpType,
-        /// Smoother on every level (3: hybrid Gauss-Seidel, 6: symmetric
-        /// hybrid Gauss-Seidel, 8: ℓ1 Gauss-Seidel, ...)
-        relax_type: u32 => HYPRE_BoomerAMGSetRelaxType,
+        /// Coarsening algorithm
+        coarsen_type: CoarsenType => HYPRE_BoomerAMGSetCoarsenType,
+        /// Interpolation operator
+        interp_type: InterpType => HYPRE_BoomerAMGSetInterpType,
+        /// Smoother on every level but the coarsest
+        relax_type: Smoother => HYPRE_BoomerAMGSetRelaxType,
         /// Relax C points before F points (`false`: lexicographic order)
         relax_order: bool => HYPRE_BoomerAMGSetRelaxOrder,
         /// Relaxation weight of the weighted Jacobi and SOR smoothers
         relax_wt: f64 => HYPRE_BoomerAMGSetRelaxWt,
         /// Number of smoother sweeps on every level
         num_sweeps: usize => HYPRE_BoomerAMGSetNumSweeps,
-        /// Multigrid cycle (1: V-cycle, 2: W-cycle)
-        cycle_type: u32 => HYPRE_BoomerAMGSetCycleType,
+        /// Multigrid cycle
+        cycle_type: CycleType => HYPRE_BoomerAMGSetCycleType,
         /// Number of levels with aggressive coarsening
         agg_num_levels: usize => HYPRE_BoomerAMGSetAggNumLevels,
-        /// Convergence criterion (0: relative residual, 1: residual relative
-        /// to the initial residual)
-        converge_type: u32 => HYPRE_BoomerAMGSetConvergeType,
+        /// Convergence criterion
+        converge_type: ConvergeType => HYPRE_BoomerAMGSetConvergeType,
         /// Logging level (1 computes the residual norms)
         logging: u32 => HYPRE_BoomerAMGSetLogging,
         /// Print level (0: nothing, 1: setup information, 2: residual norm

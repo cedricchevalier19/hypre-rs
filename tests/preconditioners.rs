@@ -6,13 +6,13 @@ use hypre_rs::preconditioners::{
     SymmetricAMGPreconditionerConfigBuilder, SymmetricPreconditioner, SymmetricSmoother,
 };
 use hypre_rs::solvers::{
-    BiCGSTABSolverConfigBuilder, COGMRESSolverConfigBuilder, FlexGMRESSolverConfigBuilder,
-    GMRESSolverConfigBuilder, IterativeSolverStatus, LGMRESSolverConfigBuilder,
-    PCGSolverConfigBuilder, Solver,
+    BiCGSTABSolverConfigBuilder, COGMRESSolverConfigBuilder, CoarsenType, CycleType,
+    FlexGMRESSolverConfigBuilder, GMRESSolverConfigBuilder, IterativeSolverStatus,
+    LGMRESSolverConfigBuilder, PCGSolverConfigBuilder, Smoother, Solver,
 };
 use hypre_rs::vector::ParVector;
 use hypre_rs::{HypreContext, HypreError, SymmetricMatrix};
-use mpi::topology::{Communicator, SimpleCommunicator};
+use mpi::topology::SimpleCommunicator;
 use std::ops::Range;
 
 /// Global number of rows; not a multiple of 2 or 3, so ranks get uneven rows.
@@ -39,7 +39,7 @@ fn vector<'a>(
 
 /// Checks that `x = [1, ..., 1]`.
 fn check_ones(x: &ParVector<'_>, rows: Range<u32>, what: &str) -> TestResult {
-    for (i, v) in rows.clone().zip(x.get_values(rows)?) {
+    for (i, v) in rows.zip(x.local_values()?) {
         assert!((v - 1.0).abs() < 1e-6, "{what}: x[{i}] = {v}, expected 1");
     }
     Ok(())
@@ -89,7 +89,7 @@ fn general_solvers<'a>(
             GMRESSolverConfigBuilder::default()
                 .tol(tol)
                 .max_iters(max_iters)
-                .k_dim(20usize)
+                .k_dim(20)
                 .build()?,
         )?
         .with_preconditioner(make()?)?
@@ -99,7 +99,7 @@ fn general_solvers<'a>(
             FlexGMRESSolverConfigBuilder::default()
                 .tol(tol)
                 .max_iters(max_iters)
-                .k_dim(20usize)
+                .k_dim(20)
                 .build()?,
         )?
         .with_preconditioner(make()?)?
@@ -109,7 +109,7 @@ fn general_solvers<'a>(
             LGMRESSolverConfigBuilder::default()
                 .tol(tol)
                 .max_iters(max_iters)
-                .k_dim(20usize)
+                .k_dim(20)
                 .build()?,
         )?
         .with_preconditioner(make()?)?
@@ -119,7 +119,7 @@ fn general_solvers<'a>(
             COGMRESSolverConfigBuilder::default()
                 .tol(tol)
                 .max_iters(max_iters)
-                .k_dim(20usize)
+                .k_dim(20)
                 .build()?,
         )?
         .with_preconditioner(make()?)?
@@ -144,8 +144,7 @@ fn preconditioners() -> TestResult {
     let comm = universe.world();
     let ctx = hypre_rs::initialize(&universe)?;
     {
-        let (rank, size) = (comm.rank() as u32, comm.size() as u32);
-        let rows = (rank * N / size)..((rank + 1) * N / size);
+        let rows = hypre_rs::distribute_rows(&comm, N);
 
         // CG on the 1D Laplacian tridiag(-1, 2, -1).
         let mut a = ctx.symmetric_matrix(&comm, rows.clone())?;
@@ -179,11 +178,18 @@ fn preconditioners() -> TestResult {
             }
             amg_configs.push(config);
         }
+        // C/F relaxation order, which keeps the cycle symmetric.
+        amg_configs.push(*SymmetricAMGPreconditionerConfigBuilder::default().relax_order(true));
+        amg_configs.push(
+            *SymmetricAMGPreconditionerConfigBuilder::default()
+                .relax_order(true)
+                .relax_type(SymmetricSmoother::HybridSymmetricGaussSeidel),
+        );
         // Two W-cycles per application.
         amg_configs.push(
             *SymmetricAMGPreconditionerConfigBuilder::default()
-                .cycle_type(2u32)
-                .max_iters(2usize),
+                .cycle_type(CycleType::W)
+                .max_iters(2),
         );
         for config in amg_configs {
             let amg = ctx.symmetric_amg_preconditioner(&comm, config.build()?)?;
@@ -233,12 +239,12 @@ fn preconditioners() -> TestResult {
         // solver and preconditioner.
         let mut ij = ctx.ij_matrix(&comm, rows.clone(), rows.clone())?;
         for i in rows.clone() {
-            ij.add_elements([(i, i, 2.0)].into_iter())?;
+            ij.add_elements([(i, i, 2.0)])?;
             if i > 0 {
-                ij.add_elements([(i, i - 1, LOWER)].into_iter())?;
+                ij.add_elements([(i, i - 1, LOWER)])?;
             }
             if i + 1 < N {
-                ij.add_elements([(i, i + 1, UPPER)].into_iter())?;
+                ij.add_elements([(i, i + 1, UPPER)])?;
             }
         }
         let a = ij.assemble()?;
@@ -255,7 +261,7 @@ fn preconditioners() -> TestResult {
         // Forward hybrid Gauss-Seidel, C points first: not symmetric.
         let amg = || {
             let config = AMGPreconditionerConfigBuilder::default()
-                .relax_type(3u32)
+                .relax_type(Smoother::HybridGaussSeidelForward)
                 .relax_order(true)
                 .build()?;
             Ok(ctx.amg_preconditioner(&comm, config)?.into())
@@ -275,12 +281,12 @@ fn preconditioners() -> TestResult {
 
         // The general AMG preconditioner reads back its configuration.
         let config = AMGPreconditionerConfigBuilder::default()
-            .max_iters(2usize)
-            .coarsen_type(8u32)
+            .max_iters(2)
+            .coarsen_type(CoarsenType::Pmis)
             .build()?;
         let current = ctx.amg_preconditioner(&comm, config)?.current_config()?;
         assert_eq!(current.max_iters, Some(2));
-        assert_eq!(current.coarsen_type, Some(8));
+        assert_eq!(current.coarsen_type, Some(CoarsenType::Pmis));
     }
     // hypre objects must be dropped before hypre is finalized (checked by the compiler)
     ctx.finalize()?;

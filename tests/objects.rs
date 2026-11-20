@@ -14,8 +14,8 @@ fn create_objects() -> Result<(), Box<dyn std::error::Error>> {
     let comm = universe.world();
     let ctx = hypre_rs::initialize(&universe)?;
     {
-        let (rank, size) = (comm.rank() as u32, comm.size() as u32);
-        let rows = (rank * 10 / size)..((rank + 1) * 10 / size);
+        let rank = comm.rank() as u32;
+        let rows = hypre_rs::distribute_rows(&comm, 10);
 
         // add_elements adds to the current values; reading needs no assembly.
         let mut v = IJVector::new(&ctx, &comm, rows.clone())?;
@@ -61,7 +61,7 @@ fn create_objects() -> Result<(), Box<dyn std::error::Error>> {
         // An index that does not fit in HYPRE_BigInt is an error, and nothing
         // is added (it used to be replaced by 0).
         assert!(matches!(
-            v.add_elements([(0, 1.0), (u64::MAX, 1.0)].into_iter()),
+            v.add_elements([(0, 1.0), (u64::MAX, 1.0)]),
             Err(HypreError::ConversionError(_))
         ));
         assert!(v.get_values(rows.clone())?.iter().all(|&x| x == 0.0));
@@ -72,11 +72,11 @@ fn create_objects() -> Result<(), Box<dyn std::error::Error>> {
         let mut s = ctx.symmetric_matrix(&comm, rows.clone())?;
         s.add_elements(rows.clone().map(|i| (i, i, 1.0)))?;
         assert!(matches!(
-            s.add_elements([(1u32, 0u32, 1.0), (0, 1, 1.0)].into_iter()),
+            s.add_elements([(1u32, 0u32, 1.0), (0, 1, 1.0)]),
             Err(HypreError::NotLowerTriangular)
         ));
         assert!(matches!(
-            s.add_elements([(0u64, 0u64, 1.0), (u64::MAX, 0, 1.0)].into_iter()),
+            s.add_elements([(0u64, 0u64, 1.0), (u64::MAX, 0, 1.0)]),
             Err(HypreError::ConversionError(_))
         ));
         drop(s);

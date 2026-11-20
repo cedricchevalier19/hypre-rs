@@ -213,7 +213,10 @@ impl<'h> IJMatrix<'h> {
     /// # Ok(())
     /// # }
     /// ```
-    pub fn add_elements<Id, V>(&mut self, nnz: impl Iterator<Item = (Id, Id, V)>) -> HypreResult<()>
+    pub fn add_elements<Id, V>(
+        &mut self,
+        nnz: impl IntoIterator<Item = (Id, Id, V)>,
+    ) -> HypreResult<()>
     where
         Id: Copy + TryInto<HYPRE_BigInt>,
         V: Copy + TryInto<HYPRE_Complex>,
@@ -264,7 +267,7 @@ impl<'h> IJMatrix<'h> {
     /// # let comm = universe.world();
     /// # let ctx = hypre_rs::initialize(&universe)?;
     /// let mut a = ctx.ij_matrix(&comm, 0..1, 0..1)?;
-    /// a.add_elements([(0u32, 0u32, 1.0)].into_iter())?;
+    /// a.add_elements([(0u32, 0u32, 1.0)])?;
     /// let b = ctx.ij_vector(&comm, 0..1)?;
     /// let mut x = ctx.ij_vector(&comm, 0..1)?;
     /// let solver = ctx.gmres_solver(&comm, Default::default())?;
@@ -294,14 +297,15 @@ type EntryMap = HashMap<(HYPRE_BigInt, HYPRE_BigInt), HYPRE_Complex>;
 /// # Errors
 ///
 /// The conversion error of the first entry that does not fit.
-fn convert_entries<Id, V>(nnz: impl Iterator<Item = (Id, Id, V)>) -> HypreResult<Vec<Entry>>
+fn convert_entries<Id, V>(nnz: impl IntoIterator<Item = (Id, Id, V)>) -> HypreResult<Vec<Entry>>
 where
     Id: Copy + TryInto<HYPRE_BigInt>,
     V: Copy + TryInto<HYPRE_Complex>,
     HypreError: From<<Id as TryInto<HYPRE_BigInt>>::Error>,
     HypreError: From<<V as TryInto<HYPRE_Complex>>::Error>,
 {
-    nnz.map(|(row, col, value)| Ok((row.try_into()?, col.try_into()?, value.try_into()?)))
+    nnz.into_iter()
+        .map(|(row, col, value)| Ok((row.try_into()?, col.try_into()?, value.try_into()?)))
         .collect()
 }
 
@@ -345,13 +349,11 @@ pub trait Matrix: sealed::AsParCSR {
     ///
     /// ```
     /// # fn main() -> Result<(), Box<dyn std::error::Error>> {
-    /// # use mpi::topology::Communicator;
     /// use hypre_rs::Matrix;
     /// # let universe = mpi::initialize().ok_or("MPI was already initialized (or finalized) in this process")?;
     /// # let comm = universe.world();
     /// # let ctx = hypre_rs::initialize(&universe)?;
-    /// # let (rank, size) = (comm.rank() as u32, comm.size() as u32);
-    /// let rows = (rank * 10 / size)..((rank + 1) * 10 / size);
+    /// let rows = hypre_rs::distribute_rows(&comm, 10);
     /// let mut ij = ctx.ij_matrix(&comm, rows.clone(), rows.clone())?;
     /// // Upper bidiagonal: not symmetric.
     /// ij.add_elements(rows.clone().map(|i| (i, i, 2.0)))?;
@@ -523,13 +525,11 @@ pub trait Matrix: sealed::AsParCSR {
 ///
 /// ```
 /// # fn main() -> Result<(), Box<dyn std::error::Error>> {
-/// # use mpi::topology::Communicator;
 /// use hypre_rs::Matrix;
 /// # let universe = mpi::initialize().ok_or("MPI was already initialized (or finalized) in this process")?;
 /// # let comm = universe.world();
 /// # let ctx = hypre_rs::initialize(&universe)?;
-/// # let (rank, size) = (comm.rank() as u32, comm.size() as u32);
-/// let rows = (rank * 10 / size)..((rank + 1) * 10 / size);
+/// let rows = hypre_rs::distribute_rows(&comm, 10);
 /// let mut laplacian = ctx.symmetric_matrix(&comm, rows.clone())?;
 /// // Diagonal and sub-diagonal; the super-diagonal is added by symmetry.
 /// laplacian.add_elements(rows.clone().map(|i| (i, i, 2.0)))?;
@@ -584,7 +584,10 @@ impl<'h> SymmetricMatrix<IJMatrix<'h>> {
     ///   hypre's types,
     ///
     /// in which cases nothing is added, or the error returned by hypre.
-    pub fn add_elements<Id, V>(&mut self, nnz: impl Iterator<Item = (Id, Id, V)>) -> HypreResult<()>
+    pub fn add_elements<Id, V>(
+        &mut self,
+        nnz: impl IntoIterator<Item = (Id, Id, V)>,
+    ) -> HypreResult<()>
     where
         Id: Copy + TryInto<HYPRE_BigInt>,
         V: Copy + TryInto<HYPRE_Complex>,
@@ -609,9 +612,9 @@ impl<'h> SymmetricMatrix<IJMatrix<'h>> {
     /// # let comm = universe.world();
     /// # let ctx = hypre_rs::initialize(&universe)?;
     /// let mut matrix = ctx.symmetric_matrix(&comm, 0..1)?;
-    /// matrix.add_elements([(0u32, 0u32, 1.0)].into_iter())?;
+    /// matrix.add_elements([(0u32, 0u32, 1.0)])?;
     /// let mut csr = matrix.assemble()?;
-    /// csr.add_elements([(0u32, 0u32, 1.0)].into_iter())?; // no such method
+    /// csr.add_elements([(0u32, 0u32, 1.0)])?; // no such method
     /// # Ok(())
     /// # }
     /// ```
@@ -663,13 +666,11 @@ impl<M> SymmetricMatrix<M> {
     ///
     /// ```
     /// # fn main() -> Result<(), Box<dyn std::error::Error>> {
-    /// # use mpi::topology::Communicator;
     /// use hypre_rs::SymmetricMatrix;
     /// # let universe = mpi::initialize().ok_or("MPI was already initialized (or finalized) in this process")?;
     /// # let comm = universe.world();
     /// # let ctx = hypre_rs::initialize(&universe)?;
-    /// # let (rank, size) = (comm.rank() as u32, comm.size() as u32);
-    /// let rows = (rank * 10 / size)..((rank + 1) * 10 / size);
+    /// let rows = hypre_rs::distribute_rows(&comm, 10);
     /// // Diagonal, so symmetric: no need to check it.
     /// let mut ij = ctx.ij_matrix(&comm, rows.clone(), rows.clone())?;
     /// ij.add_elements(rows.map(|i| (i, i, 2.0)))?;
@@ -698,19 +699,17 @@ impl<M> SymmetricMatrix<M> {
 ///
 /// ```
 /// # fn main() -> Result<(), Box<dyn std::error::Error>> {
-/// # use mpi::topology::Communicator;
 /// use hypre_rs::SymmetricMatrix;
 /// # let universe = mpi::initialize().ok_or("MPI was already initialized (or finalized) in this process")?;
 /// # let comm = universe.world();
 /// # let ctx = hypre_rs::initialize(&universe)?;
-/// # let (rank, size) = (comm.rank() as u32, comm.size() as u32);
-/// let rows = (rank * 10 / size)..((rank + 1) * 10 / size);
+/// let rows = hypre_rs::distribute_rows(&comm, 10);
 /// // tridiag(-1, 2, -1), with both triangles given.
 /// let mut ij = ctx.ij_matrix(&comm, rows.clone(), rows.clone())?;
 /// for i in rows {
-///     ij.add_elements([(i, i, 2.0)].into_iter())?;
+///     ij.add_elements([(i, i, 2.0)])?;
 ///     if i > 0 {
-///         ij.add_elements([(i, i - 1, -1.0), (i - 1, i, -1.0)].into_iter())?;
+///         ij.add_elements([(i, i - 1, -1.0), (i - 1, i, -1.0)])?;
 ///     }
 /// }
 /// let laplacian = SymmetricMatrix::try_from(ij.assemble()?)?;
@@ -843,7 +842,7 @@ mod tests {
     #[test]
     fn convert_entries_to_hypre_types() -> HypreResult<()> {
         assert_eq!(
-            convert_entries([(1u32, 2u32, 3.0f64), (4, 5, -6.0)].into_iter())?,
+            convert_entries([(1u32, 2u32, 3.0f64), (4, 5, -6.0)])?,
             vec![(1, 2, 3.0), (4, 5, -6.0)]
         );
         assert_eq!(
@@ -853,7 +852,7 @@ mod tests {
         // An index that does not fit in HYPRE_BigInt, in either position.
         for entry in [(u64::MAX, 0, 1.0), (0, u64::MAX, 1.0)] {
             assert!(matches!(
-                convert_entries([(0u64, 0u64, 1.0f64), entry].into_iter()),
+                convert_entries([(0u64, 0u64, 1.0f64), entry]),
                 Err(HypreError::ConversionError(_))
             ));
         }

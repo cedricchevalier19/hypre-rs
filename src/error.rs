@@ -17,12 +17,47 @@ pub enum HypreError {
     HypreArgError(u32),
     #[error("Hypre convergence error")]
     HypreConvError,
+    /// A solver did not converge within its maximum number of iterations;
+    /// the status holds the iterations done and the residual reached.
+    ///
+    /// ```
+    /// # fn main() -> Result<(), Box<dyn std::error::Error>> {
+    /// use hypre_rs::prelude::*;
+    /// # let universe = mpi::initialize().ok_or("MPI was already initialized (or finalized) in this process")?;
+    /// # let comm = universe.world();
+    /// # let ctx = hypre_rs::initialize(&universe)?;
+    /// # let rows = distribute_rows(&comm, 100);
+    /// # let mut a = ctx.symmetric_matrix(&comm, rows.clone())?;
+    /// # a.add_elements(rows.clone().map(|i| (i, i, 2.0)))?;
+    /// # a.add_elements(rows.clone().filter(|&i| i > 0).map(|i| (i, i - 1, -1.0)))?;
+    /// # let a = a.assemble()?;
+    /// # let b = ParVector::from_fn(&ctx, &comm, rows.clone(), |_| 1.0)?;
+    /// # let mut x = ParVector::zeros(&ctx, &comm, rows)?;
+    /// let config = PCGSolverConfigBuilder::default().tol(1e-12).max_iters(2).build()?;
+    /// let solver = ctx.pcg_solver(&comm, config)?;
+    /// match solver.solve(&a, &b, &mut x) {
+    ///     Ok(status) => println!("{status}"),
+    ///     // `x` holds the last iterate.
+    ///     Err(HypreError::NotConverged(status)) => assert_eq!(status.num_iters, 2),
+    ///     Err(error) => return Err(error.into()),
+    /// }
+    /// # drop((solver, a, b, x));
+    /// # ctx.finalize()?;
+    /// # Ok(())
+    /// # }
+    /// ```
+    #[error("{0}")]
+    NotConverged(crate::solvers::IterativeSolverStatus),
     #[error("MPI Error")]
     MpiError,
     #[error("Unknown error")]
     UnknowError,
     #[error("Invalid parameter, should be positive")]
     InvalidParameterPositive,
+    /// hypre returned an option value that the matching enum does not
+    /// list (for example a newer hypre option).
+    #[error("Unknown option value {0} returned by hypre")]
+    UnknownOptionValue(hypre_sys::HYPRE_Int),
     #[error("Invalid range: start is greater than end")]
     InvalidRange,
     #[error("hypre is already initialized")]

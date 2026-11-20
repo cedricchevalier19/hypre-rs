@@ -57,6 +57,45 @@ pub(crate) fn inclusive_bounds(range: &Range<u32>) -> HypreResult<(HYPRE_BigInt,
     Ok((lower, end - 1))
 }
 
+/// Distributes `n` global rows over the MPI ranks of `comm` in balanced,
+/// contiguous blocks, and returns the half-open range owned by this rank.
+///
+/// Rank `r` of `size` gets rows `r * n / size .. (r + 1) * n / size`: block
+/// sizes differ by at most one, and ranks beyond `n` get an empty range.
+/// The result is what [IJMatrix::new](crate::matrix::IJMatrix::new),
+/// [IJVector::new](crate::IJVector::new) and the context's factories expect.
+/// It is not collective: every rank computes its own range.
+///
+/// # Example
+///
+/// ```
+/// # fn main() -> Result<(), Box<dyn std::error::Error>> {
+/// # let universe = mpi::initialize().ok_or("MPI was already initialized (or finalized) in this process")?;
+/// # let comm = universe.world();
+/// # let ctx = hypre_rs::initialize(&universe)?;
+/// let rows = hypre_rs::distribute_rows(&comm, 100);
+/// let x = hypre_rs::ParVector::zeros(&ctx, &comm, rows)?;
+/// # drop(x);
+/// # ctx.finalize()?;
+/// # Ok(())
+/// # }
+/// ```
+pub fn distribute_rows(comm: &impl mpi::topology::Communicator, n: u32) -> Range<u32> {
+    // An MPI rank and size are never negative.
+    balanced_block(comm.rank().unsigned_abs(), comm.size().unsigned_abs(), n)
+}
+
+/// Rows `rank * n / size .. (rank + 1) * n / size`, computed in 64 bits so
+/// that `rank * n` cannot overflow.
+fn balanced_block(rank: u32, size: u32, n: u32) -> Range<u32> {
+    let bound = |r: u32| {
+        let b = u64::from(r) * u64::from(n) / u64::from(size);
+        // b <= n because r <= size.
+        u32::try_from(b).unwrap_or(n)
+    };
+    bound(rank)..bound(rank + 1)
+}
+
 /// Serializes the unit tests that read or change hypre's global error flag:
 /// tests of one binary run in parallel threads.
 #[cfg(test)]
@@ -69,6 +108,24 @@ pub(crate) fn hypre_error_lock() -> std::sync::MutexGuard<'static, ()> {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn balanced_blocks_cover_all_rows() {
+        for (n, size) in [(10, 1), (10, 3), (100, 7), (2, 5), (0, 4), (u32::MAX, 3)] {
+            let blocks: Vec<_> = (0..size).map(|r| balanced_block(r, size, n)).collect();
+            // Contiguous, starting at 0 and ending at n.
+            assert_eq!(blocks[0].start, 0);
+            assert_eq!(blocks[blocks.len() - 1].end, n);
+            assert!(blocks.windows(2).all(|w| w[0].end == w[1].start));
+            // Balanced: sizes differ by at most one.
+            let lens: Vec<_> = blocks.iter().map(|b| b.len()).collect();
+            let (min, max) = (lens.iter().min(), lens.iter().max());
+            assert!(
+                matches!((min, max), (Some(a), Some(b)) if b - a <= 1),
+                "{lens:?}"
+            );
+        }
+    }
 
     #[test]
     fn inclusive_bounds_conversion() -> HypreResult<()> {

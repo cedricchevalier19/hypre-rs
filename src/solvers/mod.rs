@@ -6,12 +6,14 @@ mod macros;
 pub(crate) mod solver_macro;
 mod amg;
 mod krylov;
+mod options;
 #[cfg(test)]
 mod tests;
 
 use std::fmt;
 use std::fmt::Formatter;
 
+use crate::error::HypreError;
 use crate::matrix::{Matrix, SymmetricMatrix};
 use crate::vector::ParVector;
 use crate::HypreResult;
@@ -23,6 +25,7 @@ pub use krylov::{
     LGMRESSolver, LGMRESSolverConfig, LGMRESSolverConfigBuilder, PCGSolver, PCGSolverConfig,
     PCGSolverConfigBuilder,
 };
+pub use options::{CoarsenType, ConvergeType, CycleType, GramSchmidtPasses, InterpType, Smoother};
 
 /// Solver status information
 #[derive(Debug, Clone, Copy)]
@@ -53,6 +56,28 @@ impl fmt::Display for IterativeSolverStatus {
     }
 }
 
+/// Turns the error code of a hypre solve into its result: a convergence
+/// failure alone becomes [HypreError::NotConverged] with the `status`
+/// reached, and other errors are mapped as usual.
+pub(crate) fn solve_result(
+    code: hypre_sys::HYPRE_Int,
+    status: IterativeSolverStatus,
+) -> HypreResult<IterativeSolverStatus> {
+    if code == 0 {
+        return Ok(status);
+    }
+    let error = HypreError::new(code); // clears hypre's error flag
+    if code == hypre_sys::HYPRE_ERROR_CONV as hypre_sys::HYPRE_Int {
+        // Some solvers (BiCGSTAB) cannot report convergence themselves.
+        Err(HypreError::NotConverged(IterativeSolverStatus {
+            converged: false,
+            ..status
+        }))
+    } else {
+        Err(error)
+    }
+}
+
 /// Solver for general linear systems.
 ///
 /// They accept any [Matrix], including a [SymmetricMatrix] and, when the
@@ -65,9 +90,9 @@ pub trait LinearSolver {
     ///
     /// # Errors
     ///
-    /// [HypreError::HypreConvError](crate::HypreError::HypreConvError) if
-    /// the solver did not converge within its maximum number of iterations,
-    /// or another error returned by hypre.
+    /// [HypreError::NotConverged], with the status reached, if the solver
+    /// did not converge within its maximum number of iterations, or another
+    /// error returned by hypre.
     fn solve<M: Matrix + ?Sized>(
         &self,
         mat: &M,
@@ -85,13 +110,12 @@ pub trait LinearSolver {
 ///
 /// ```
 /// # fn main() -> Result<(), Box<dyn std::error::Error>> {
-/// # use mpi::topology::Communicator;
 /// use hypre_rs::solvers::{GMRESSolverConfigBuilder, Solver};
+/// use hypre_rs::ParVector;
 /// # let universe = mpi::initialize().ok_or("MPI was already initialized (or finalized) in this process")?;
 /// # let comm = universe.world();
 /// # let ctx = hypre_rs::initialize(&universe)?;
-/// # let (rank, size) = (comm.rank() as u32, comm.size() as u32);
-/// let rows = (rank * 10 / size)..((rank + 1) * 10 / size);
+/// let rows = hypre_rs::distribute_rows(&comm, 10);
 /// // Upper bidiagonal, not symmetric: 2 on the diagonal, -1 above.
 /// let mut a = ctx.ij_matrix(&comm, rows.clone(), rows.clone())?;
 /// a.add_elements(rows.clone().map(|i| (i, i, 2.0)))?;
@@ -99,10 +123,8 @@ pub trait LinearSolver {
 /// let a = a.assemble()?;
 ///
 /// // b = A * [1, ..., 1]
-/// let mut b = ctx.ij_vector(&comm, rows.clone())?;
-/// b.add_elements(rows.clone().map(|i| (i, if i < 9 { 1.0 } else { 2.0 })))?;
-/// let b = b.assemble()?;
-/// let mut x = ctx.ij_vector(&comm, rows)?.assemble()?;
+/// let b = ParVector::from_fn(&ctx, &comm, rows.clone(), |i| if i < 9 { 1.0 } else { 2.0 })?;
+/// let mut x = ParVector::zeros(&ctx, &comm, rows)?;
 ///
 /// // For example from a configuration file.
 /// let use_bicgstab = false;

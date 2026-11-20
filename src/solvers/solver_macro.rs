@@ -95,7 +95,9 @@ macro_rules! hypre_solver {
         /// Fields set to `None` keep hypre's default (or, for
         #[doc = concat!("[", stringify!($Solver), "::config], the current value).")]
         #[derive(Default, Debug, Clone, Builder, Copy)]
-        #[builder(setter(into, strip_option), default, derive(Debug, Copy))]
+        // No `setter(into)`: with it, a setter takes any `Into<usize>` and an
+        // integer literal such as `max_iters(500)` defaults to `i32`.
+        #[builder(setter(strip_option), default, derive(Debug, Copy))]
         #[builder(build_fn(validate = "Self::validate", error = "HypreError"))]
         pub struct $Config {
             $( $(#[$field_doc])* pub $field: Option<$ty>, )*
@@ -200,9 +202,9 @@ macro_rules! hypre_solver {
             ///
             /// # Errors
             ///
-            /// [HypreError::HypreConvError] if the solver did not converge
-            /// within its maximum number of iterations, or another error
-            /// returned by hypre.
+            /// [HypreError::NotConverged] if the solver did not converge
+            /// within its maximum number of iterations (with the status it
+            /// reached), or another error returned by hypre.
             pub fn solve<M: $crate::Matrix + ?Sized>(
                 &self,
                 mat: &$MatTy,
@@ -214,9 +216,9 @@ macro_rules! hypre_solver {
                 let x = x.as_raw();
                 unsafe {
                     check_hypre!($setup(self.internal_solver, a, b, x));
-                    // A solve that does not converge returns HYPRE_ERROR_CONV.
-                    check_hypre!($solve(self.internal_solver, a, b, x));
-                    // The getters cannot fail on a set-up solver.
+                    let code = $solve(self.internal_solver, a, b, x);
+                    // The getters cannot fail on a set-up solver, and
+                    // return the solver's state even if it did not converge.
                     let mut num_iters: HYPRE_Int = 0;
                     $num_iters(self.internal_solver, &mut num_iters);
                     let mut res_norm: HYPRE_Real = 0.0;
@@ -224,11 +226,12 @@ macro_rules! hypre_solver {
                     #[allow(unused_mut)]
                     let mut converged: HYPRE_Int = 1;
                     $( $converged(self.internal_solver, &mut converged); )?
-                    Ok(IterativeSolverStatus {
+                    let status = IterativeSolverStatus {
                         num_iters: num_iters.try_into()?,
                         res_num: res_norm,
                         converged: converged != 0,
-                    })
+                    };
+                    $crate::solvers::solve_result(code, status)
                 }
             }
         }

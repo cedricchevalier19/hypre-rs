@@ -17,27 +17,22 @@
 //!
 //! ```
 //! # fn main() -> Result<(), Box<dyn std::error::Error>> {
-//! # use mpi::topology::Communicator;
 //! use hypre_rs::preconditioners::SymmetricAMGPreconditionerConfigBuilder;
 //! use hypre_rs::solvers::PCGSolverConfigBuilder;
+//! use hypre_rs::ParVector;
 //!
 //! # let universe = mpi::initialize().ok_or("MPI was already initialized (or finalized) in this process")?;
 //! # let comm = universe.world();
 //! # let ctx = hypre_rs::initialize(&universe)?;
-//! # let (rank, size) = (comm.rank() as u32, comm.size() as u32);
 //! // The 1D Laplacian tridiag(-1, 2, -1), from its lower triangle.
 //! let n = 100;
-//! let rows = (rank * n / size)..((rank + 1) * n / size);
+//! let rows = hypre_rs::distribute_rows(&comm, n);
 //! let mut a = ctx.symmetric_matrix(&comm, rows.clone())?;
 //! a.add_elements(rows.clone().map(|i| (i, i, 2.0)))?;
 //! a.add_elements(rows.clone().filter(|&i| i > 0).map(|i| (i, i - 1, -1.0)))?;
 //! let a = a.assemble()?;
-//! let mut b = ctx.ij_vector(&comm, rows.clone())?;
-//! b.add_elements(rows.clone().map(|i| (i, 1.0)))?;
-//! let b = b.assemble()?;
-//! let mut x = ctx.ij_vector(&comm, rows.clone())?;
-//! x.add_elements(rows.clone().map(|i| (i, 0.0)))?;
-//! let mut x = x.assemble()?;
+//! let b = ParVector::from_fn(&ctx, &comm, rows.clone(), |_| 1.0)?;
+//! let mut x = ParVector::zeros(&ctx, &comm, rows.clone())?;
 //!
 //! // CG preconditioned by one AMG V-cycle.
 //! let amg = ctx.symmetric_amg_preconditioner(&comm, Default::default())?;

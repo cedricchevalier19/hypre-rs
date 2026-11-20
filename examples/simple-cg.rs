@@ -1,6 +1,5 @@
 extern crate hypre_rs;
-use hypre_rs::solvers::PCGSolverConfigBuilder;
-use mpi::topology::Communicator;
+use hypre_rs::prelude::*;
 
 fn main() -> Result<(), Box<dyn std::error::Error>> {
     let universe =
@@ -12,12 +11,8 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     // Define matrix sizes
     let mesh_size: u32 = 10;
     let global_size = mesh_size * mesh_size;
-    // Split rows evenly; the first ranks get one extra row when the size
-    // does not divide evenly.
-    let (rank, size) = (mpi_comm.rank() as u64, mpi_comm.size() as u64);
-    let local_begin: u32 = (rank * global_size as u64 / size).try_into()?;
-    let local_end: u32 = ((rank + 1) * global_size as u64 / size).try_into()?;
-    let local_rows = local_begin..local_end;
+    // Rows owned by this MPI rank, in balanced contiguous blocks.
+    let local_rows = distribute_rows(&mpi_comm, global_size);
 
     // Create a new symmetric matrix
     let mut matrix = ctx.symmetric_matrix(&mpi_comm, local_rows.clone())?;
@@ -25,7 +20,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     // Fill the lower triangle of the 2D Laplacian; the upper triangle is
     // added by symmetry.
     let mut nnz_buffer = Vec::<(u32, u32, f64)>::with_capacity(3);
-    for row in local_begin..local_end {
+    for row in local_rows.clone() {
         if row >= mesh_size {
             nnz_buffer.push((row, row - mesh_size, -1.0));
         }
@@ -41,20 +36,16 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     // Solvers need an assembled matrix; it cannot be modified afterwards.
     let matrix = matrix.assemble()?;
 
-    let mut rhs = ctx.ij_vector(&mpi_comm, local_rows.clone())?;
-    rhs.add_elements((local_begin..local_end).map(|i| (i, i as f64)))?;
-    let rhs = rhs.assemble()?;
+    let rhs = ParVector::from_fn(&ctx, &mpi_comm, local_rows.clone(), |i| i as f64)?;
 
-    let mut x = ctx.ij_vector(&mpi_comm, local_rows.clone())?;
-    x.add_elements((local_begin..local_end).map(|i| (i, 0f64)))?;
-    let mut x = x.assemble()?;
+    let mut x = ParVector::zeros(&ctx, &mpi_comm, local_rows.clone())?;
 
     // CG solver parameters
     let my_parameters = PCGSolverConfigBuilder::default()
         .tol(1e-9)
-        .max_iters(500usize)
+        .max_iters(500)
         .two_norm(true)
-        .recompute_residual_period(8usize)
+        .recompute_residual_period(8)
         .build()?;
 
     // Create new CG solver with previous parameters
