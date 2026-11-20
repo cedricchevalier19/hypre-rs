@@ -1,6 +1,5 @@
 extern crate hypre_rs;
-use hypre_rs::solvers::PCGSolverConfigBuilder;
-use hypre_rs::ParVector;
+use hypre_rs::prelude::*;
 
 fn main() -> Result<(), Box<dyn std::error::Error>> {
     let universe =
@@ -13,7 +12,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     let mesh_size: u32 = 10;
     let global_size = mesh_size * mesh_size;
     // Rows owned by this MPI rank, in balanced contiguous blocks.
-    let local_rows = hypre_rs::distribute_rows(&mpi_comm, global_size);
+    let local_rows = distribute_rows(&mpi_comm, global_size);
 
     // Create a new symmetric matrix
     let mut matrix = ctx.symmetric_matrix(&mpi_comm, local_rows.clone())?;

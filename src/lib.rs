@@ -6,13 +6,13 @@
 //!
 //! # Motivating example
 //!
-//! Here is a small example of a call to hypre's CG solver.
+//! Here is a small example of a call to hypre's CG solver. The
+//! [prelude] brings in what most programs need.
 //! ```
 //! # fn main() -> Result<(), Box<dyn std::error::Error>> {
 //! extern crate hypre_rs;
 //! # use mpi::initialize;
-//! use hypre_rs::solvers::PCGSolverConfigBuilder;
-//! use hypre_rs::ParVector;
+//! use hypre_rs::prelude::*;
 //!
 //! let universe = mpi::initialize().ok_or("MPI was already initialized (or finalized) in this process")?;
 //! let mpi_comm = universe.world();
@@ -20,7 +20,7 @@
 //! let ctx = hypre_rs::initialize(&universe)?;
 //!
 //! // Split the 12 rows between the MPI ranks
-//! let rows = hypre_rs::distribute_rows(&mpi_comm, 12);
+//! let rows = distribute_rows(&mpi_comm, 12);
 //!
 //! // CG needs a symmetric matrix: give the lower triangle, the upper one
 //! // is added by symmetry. Here the 1D Laplacian tridiag(-1, 2, -1).
@@ -70,6 +70,7 @@ pub mod matrix;
 #[macro_use]
 pub mod solvers;
 pub mod preconditioners;
+pub mod prelude;
 pub mod vector;
 
 type HypreResult<T> = Result<T, error::HypreError>;
