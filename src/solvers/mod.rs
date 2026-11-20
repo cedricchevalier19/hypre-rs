@@ -43,13 +43,13 @@ impl fmt::Display for IterativeSolverStatus {
         if self.converged {
             write!(
                 f,
-                "Solver has converged in {} iterations, reaching a relative residual of {}",
+                "Solver has converged in {} iterations, reaching a relative residual of {:.3e}",
                 self.num_iters, self.res_num
             )
         } else {
             write!(
                 f,
-                "Solver has NOT converged in {} iterations, reaching a relative residual of {}",
+                "Solver has NOT converged in {} iterations, reaching a relative residual of {:.3e}",
                 self.num_iters, self.res_num
             )
         }

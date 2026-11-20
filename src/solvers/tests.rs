@@ -11,12 +11,12 @@ fn status_display() {
     };
     assert_eq!(
         status.to_string(),
-        "Solver has converged in 12 iterations, reaching a relative residual of 0.5"
+        "Solver has converged in 12 iterations, reaching a relative residual of 5.000e-1"
     );
     status.converged = false;
     assert_eq!(
         status.to_string(),
-        "Solver has NOT converged in 12 iterations, reaching a relative residual of 0.5"
+        "Solver has NOT converged in 12 iterations, reaching a relative residual of 5.000e-1"
     );
 }
 
