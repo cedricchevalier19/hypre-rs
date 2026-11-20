@@ -20,7 +20,6 @@
 //! # use mpi::topology::Communicator;
 //! use hypre_rs::preconditioners::SymmetricAMGPreconditionerConfigBuilder;
 //! use hypre_rs::solvers::{PCGSolverConfigBuilder, SymmetricLinearSolver, SymmetricSolver};
-//! use hypre_rs::Vector;
 //!
 //! # let universe = mpi::initialize().ok_or("MPI was already initialized (or finalized) in this process")?;
 //! # let comm = universe.world();
@@ -36,7 +35,6 @@
 //! b.add_elements(rows.clone().map(|i| (i, 1.0)))?;
 //! let mut x = ctx.ij_vector(&comm, rows.clone())?;
 //! x.add_elements(rows.clone().map(|i| (i, 0.0)))?;
-//! let (b, mut x) = (Vector::IJ(b), Vector::IJ(x));
 //!
 //! // CG preconditioned by one AMG V-cycle.
 //! let amg = ctx.symmetric_amg_preconditioner(&comm, Default::default())?;

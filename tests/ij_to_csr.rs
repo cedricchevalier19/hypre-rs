@@ -4,7 +4,6 @@
 use hypre_rs::matrix::{CSRMatrix, IJMatrix, SymmetricMatrix};
 use hypre_rs::solvers::{PCGSolver, SymmetricLinearSolver};
 use hypre_rs::vector::IJVector;
-use hypre_rs::{HypreError, Matrix, Vector};
 use mpi::topology::Communicator;
 
 #[test]
@@ -21,30 +20,25 @@ fn ij_to_csr_conversion_outlives_ij() -> Result<(), Box<dyn std::error::Error>> 
         ij.add_elements((b..e).map(|i| (i, i, 2.0f64)))?;
         // `try_from` consumes `ij`: the IJMatrix is destroyed here, while its
         // ParCSR object is handed over to (and later destroyed by) `csr`.
-        let csr = Matrix::ParCSR(CSRMatrix::try_from(ij)?);
+        let csr = CSRMatrix::try_from(ij)?;
         drop(csr);
 
         // Same through a symmetric matrix, which CG accepts.
         let mut matrix = SymmetricMatrix::new(&ctx, &comm, b..e)?;
         matrix.add_elements((b..e).map(|i| (i, i, 2.0f64)))?;
-        let mut matrix = matrix.into_csr()?;
-        // A CSR matrix can no longer be modified.
-        assert!(matches!(
-            matrix.add_elements((b..e).map(|i| (i, i, 1.0f64))),
-            Err(HypreError::NotIJMatrix)
-        ));
+        // A CSR matrix can no longer be modified: it has no `add_elements`
+        // (checked by the compiler; see the `into_csr` doctest).
+        let matrix = matrix.into_csr()?;
 
         let mut rhs = ctx.ij_vector(&comm, b..e)?;
         rhs.add_elements((b..e).map(|i| (i, 2.0f64)))?;
         let mut x = IJVector::new(&ctx, &comm, b..e)?;
         x.add_elements((b..e).map(|i| (i, 0.0f64)))?;
-        let mut x = Vector::IJ(x);
 
         let solver = PCGSolver::new(&ctx, &comm, Default::default())?;
-        let status = solver.solve(&matrix, &Vector::IJ(rhs), &mut x)?;
+        let status = solver.solve(&matrix, &rhs, &mut x)?;
         assert!(status.converged);
         // A = 2 * I and b = [2, ..., 2], so the exact solution is x = [1, ..., 1].
-        let Vector::IJ(x) = &x;
         for v in x.get_values(b..e)? {
             assert!((v - 1.0).abs() < 1e-12, "x = {v}, expected 1");
         }

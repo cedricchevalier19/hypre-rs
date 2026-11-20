@@ -1,6 +1,5 @@
 use crate::error::HypreError;
 use crate::utils::inclusive_bounds;
-use crate::vector::Vector::IJ;
 use crate::{HypreContext, HypreResult};
 use hypre_sys::*;
 use itertools::Itertools;
@@ -53,14 +52,14 @@ impl<'h> IJVector<'h> {
         Ok(out)
     }
 
-    fn get_internal(&self) -> HypreResult<HYPRE_Vector> {
-        let mut out: HYPRE_Vector = null_mut();
+    /// Assembles the vector and returns its ParVector object.
+    pub(crate) fn as_par_vector(&self) -> HypreResult<HYPRE_ParVector> {
+        let mut out: *mut c_void = null_mut();
         unsafe {
             check_hypre!(HYPRE_IJVectorAssemble(self.internal));
-            let csr_ptr = &mut out as *mut _ as *mut *mut c_void;
-            check_hypre!(HYPRE_IJVectorGetObject(self.internal, csr_ptr));
+            check_hypre!(HYPRE_IJVectorGetObject(self.internal, &mut out));
         }
-        Ok(out)
+        Ok(out as HYPRE_ParVector)
     }
 
     /// Adds `value` to entry `index` for every `(index, value)` of `nnz`.
@@ -145,20 +144,3 @@ impl<'h> IJVector<'h> {
 }
 
 impl_hypre_drop!(IJVector<'_>, internal, HYPRE_IJVectorDestroy);
-
-/// Vector datatype
-///
-/// This type is generic, to handle the different hypre implementations
-#[derive(Debug)]
-pub enum Vector<'h> {
-    /// IJ vector, defined algebraically
-    IJ(IJVector<'h>),
-}
-
-impl Vector<'_> {
-    pub(crate) fn get_internal(&self) -> HypreResult<HYPRE_Vector> {
-        match self {
-            IJ(m) => m.get_internal(),
-        }
-    }
-}

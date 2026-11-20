@@ -1,5 +1,6 @@
 //! Preconditioned Krylov solvers, on any number of MPI ranks.
 
+use hypre_rs::matrix::IJMatrix;
 use hypre_rs::preconditioners::{
     AMGPreconditionerConfigBuilder, JacobiPreconditioner, Preconditioner,
     SymmetricAMGPreconditionerConfigBuilder, SymmetricPreconditioner, SymmetricSmoother,
@@ -9,7 +10,8 @@ use hypre_rs::solvers::{
     GMRESSolverConfigBuilder, IterativeSolverStatus, LGMRESSolverConfigBuilder, LinearSolver,
     PCGSolverConfigBuilder, Solver, SymmetricLinearSolver, SymmetricSolver,
 };
-use hypre_rs::{HypreContext, HypreError, Matrix, Vector};
+use hypre_rs::vector::IJVector;
+use hypre_rs::{HypreContext, HypreError, SymmetricMatrix};
 use mpi::topology::{Communicator, SimpleCommunicator};
 use std::ops::Range;
 
@@ -29,15 +31,14 @@ fn vector<'a>(
     comm: &'a SimpleCommunicator,
     rows: Range<u32>,
     f: impl Fn(u32) -> f64,
-) -> Result<Vector<'a>, HypreError> {
+) -> Result<IJVector<'a>, HypreError> {
     let mut v = ctx.ij_vector(comm, rows.clone())?;
     v.add_elements(rows.map(|i| (i, f(i))))?;
-    Ok(Vector::IJ(v))
+    Ok(v)
 }
 
 /// Checks that `x = [1, ..., 1]`.
-fn check_ones(x: &Vector<'_>, rows: Range<u32>, what: &str) -> TestResult {
-    let Vector::IJ(x) = x;
+fn check_ones(x: &IJVector<'_>, rows: Range<u32>, what: &str) -> TestResult {
     for (i, v) in rows.clone().zip(x.get_values(rows)?) {
         assert!((v - 1.0).abs() < 1e-6, "{what}: x[{i}] = {v}, expected 1");
     }
@@ -49,7 +50,7 @@ fn cg(
     ctx: &HypreContext<'_>,
     comm: &SimpleCommunicator,
     rows: Range<u32>,
-    a: &hypre_rs::SymmetricMatrix<'_>,
+    a: &SymmetricMatrix<IJMatrix<'_>>,
     preconditioner: Option<SymmetricPreconditioner<'_>>,
 ) -> TestResult<IterativeSolverStatus> {
     let what = format!("CG with {preconditioner:?}");
@@ -245,7 +246,7 @@ fn preconditioners() -> TestResult {
                 ij.add_elements([(i, i + 1, UPPER)].into_iter())?;
             }
         }
-        let a = Matrix::IJ(ij);
+        let a = ij;
         // A * [1, ..., 1]
         let b = vector(&ctx, &comm, rows.clone(), |i| {
             2.0 + if i > 0 { LOWER } else { 0.0 } + if i + 1 < N { UPPER } else { 0.0 }

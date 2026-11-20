@@ -8,7 +8,7 @@ use crate::error::HypreError;
 use crate::matrix::SymmetricMatrix;
 use crate::preconditioners::SymmetricPreconditioner;
 use crate::solvers::{IterativeSolverStatus, SymmetricLinearSolver};
-use crate::{HypreContext, HypreResult, Vector};
+use crate::{HypreContext, HypreResult};
 use hypre_sys::*;
 
 hypre_solver! {
@@ -51,7 +51,7 @@ hypre_solver! {
     config PCGSolverConfig, PCGSolverConfigBuilder;
     create HYPRE_ParCSRPCGCreate, destroy HYPRE_ParCSRPCGDestroy;
     setup HYPRE_ParCSRPCGSetup, solve HYPRE_ParCSRPCGSolve;
-    solves SymmetricLinearSolver for SymmetricMatrix;
+    solves SymmetricLinearSolver for SymmetricMatrix<M>;
     status HYPRE_ParCSRPCGGetNumIterations, HYPRE_ParCSRPCGGetFinalRelativeResidualNorm,
         converged HYPRE_PCGGetConverged;
     precond HYPRE_ParCSRPCGSetPrecond, SymmetricPreconditioner;

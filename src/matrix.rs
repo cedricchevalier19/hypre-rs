@@ -1,14 +1,13 @@
 use crate::error::HypreError;
-use crate::matrix::Matrix::{ParCSR, IJ};
 use crate::utils::inclusive_bounds;
 use crate::{HypreContext, HypreResult};
 use hypre_sys::{
     HYPRE_BigInt, HYPRE_Complex, HYPRE_IJMatrix, HYPRE_IJMatrixAddToValues, HYPRE_IJMatrixAssemble,
     HYPRE_IJMatrixCreate, HYPRE_IJMatrixDestroy, HYPRE_IJMatrixGetObject, HYPRE_IJMatrixInitialize,
-    HYPRE_IJMatrixSetObjectType, HYPRE_Int, HYPRE_Matrix, HYPRE_ParCSRMatrix,
-    HYPRE_ParCSRMatrixCreate, HYPRE_ParCSRMatrixDestroy, HYPRE_ParCSRMatrixGetComm,
-    HYPRE_ParCSRMatrixGetDims, HYPRE_ParCSRMatrixGetLocalRange, HYPRE_ParCSRMatrixGetRow,
-    HYPRE_ParCSRMatrixRestoreRow, HYPRE_PARCSR,
+    HYPRE_IJMatrixSetObjectType, HYPRE_Int, HYPRE_ParCSRMatrix, HYPRE_ParCSRMatrixCreate,
+    HYPRE_ParCSRMatrixDestroy, HYPRE_ParCSRMatrixGetComm, HYPRE_ParCSRMatrixGetDims,
+    HYPRE_ParCSRMatrixGetLocalRange, HYPRE_ParCSRMatrixGetRow, HYPRE_ParCSRMatrixRestoreRow,
+    HYPRE_PARCSR,
 };
 use mpi::collective::{CommunicatorCollectives, SystemOperation};
 use mpi::datatype::{Partition, PartitionMut};
@@ -71,11 +70,15 @@ impl<'h> CSRMatrix<'h> {
         }
         Ok(out)
     }
+}
 
-    fn get_internal(&self) -> HypreResult<HYPRE_Matrix> {
-        Ok(self.internal_matrix as HYPRE_Matrix)
+impl sealed::AsParCSR for CSRMatrix<'_> {
+    fn as_parcsr(&self) -> HypreResult<HYPRE_ParCSRMatrix> {
+        Ok(self.internal_matrix)
     }
 }
+
+impl Matrix for CSRMatrix<'_> {}
 
 impl_hypre_drop!(CSRMatrix<'_>, internal_matrix, HYPRE_ParCSRMatrixDestroy);
 
@@ -245,21 +248,24 @@ impl<'h> IJMatrix<'h> {
         }
         Ok(())
     }
+}
 
+impl sealed::AsParCSR for IJMatrix<'_> {
     /// Assembles the matrix and returns its ParCSR object.
     ///
     /// Takes `&self`: assembling changes hypre's state behind the handle,
     /// not any Rust data.
-    fn get_internal(&self) -> HypreResult<HYPRE_Matrix> {
-        let mut out: HYPRE_Matrix = null_mut();
+    fn as_parcsr(&self) -> HypreResult<HYPRE_ParCSRMatrix> {
+        let mut out: *mut c_void = null_mut();
         unsafe {
             check_hypre!(HYPRE_IJMatrixAssemble(self.internal_matrix));
-            let csr_mat_ptr = &mut out as *mut _ as *mut *mut c_void;
-            check_hypre!(HYPRE_IJMatrixGetObject(self.internal_matrix, csr_mat_ptr));
+            check_hypre!(HYPRE_IJMatrixGetObject(self.internal_matrix, &mut out));
         }
-        Ok(out)
+        Ok(out as HYPRE_ParCSRMatrix)
     }
 }
+
+impl Matrix for IJMatrix<'_> {}
 
 impl_hypre_drop!(IJMatrix<'_>, internal_matrix, HYPRE_IJMatrixDestroy);
 
@@ -285,25 +291,27 @@ where
         .collect()
 }
 
-/// Matrix datatype
-///
-/// This type is generic, to handle the different hypre implementations
-#[derive(Debug)]
-pub enum Matrix<'h> {
-    /// IJ matrix, defined algebraically
-    IJ(IJMatrix<'h>),
-    /// Parallel CSR matrix, behind IJ matrix
-    ParCSR(CSRMatrix<'h>),
+pub(crate) mod sealed {
+    use crate::HypreResult;
+    use hypre_sys::HYPRE_ParCSRMatrix;
+
+    /// Gives hypre's solvers the ParCSR object of a matrix. Not nameable
+    /// outside the crate, so only the crate's types implement [Matrix].
+    ///
+    /// [Matrix]: super::Matrix
+    pub trait AsParCSR {
+        /// Returns the ParCSR object, assembling the matrix if needed.
+        fn as_parcsr(&self) -> HypreResult<HYPRE_ParCSRMatrix>;
+    }
 }
 
-impl Matrix<'_> {
-    pub(crate) fn get_internal(&self) -> HypreResult<HYPRE_Matrix> {
-        match self {
-            IJ(m) => m.get_internal(),
-            ParCSR(m) => m.get_internal(),
-        }
-    }
-
+/// A distributed matrix that hypre's solvers accept.
+///
+/// Implemented by [IJMatrix] (assembled when a solver uses it),
+/// [CSRMatrix] and [SymmetricMatrix]. The trait is sealed: other types
+/// cannot implement it. It is object safe, so `&dyn Matrix` works when the
+/// storage is chosen at runtime.
+pub trait Matrix: sealed::AsParCSR {
     /// Returns whether the matrix is symmetric: square, with
     /// `|a_ij - a_ji| <= tol * max(|a_ij|, |a_ji|)` for all `i`, `j`.
     ///
@@ -333,16 +341,15 @@ impl Matrix<'_> {
     /// // Upper bidiagonal: not symmetric.
     /// ij.add_elements(rows.clone().map(|i| (i, i, 2.0)))?;
     /// ij.add_elements(rows.filter(|&i| i < 9).map(|i| (i, i + 1, -1.0)))?;
-    /// let matrix = Matrix::IJ(ij);
-    /// assert!(!matrix.is_symmetric(0.0)?);
-    /// # drop(matrix);
+    /// assert!(!ij.is_symmetric(0.0)?);
+    /// # drop(ij);
     /// # ctx.finalize()?;
     /// # Ok(())
     /// # }
     /// ```
-    pub fn is_symmetric(&self, tol: f64) -> HypreResult<bool> {
+    fn is_symmetric(&self, tol: f64) -> HypreResult<bool> {
         check_tolerance(tol)?;
-        let parcsr = self.get_internal()? as HYPRE_ParCSRMatrix;
+        let parcsr = self.as_parcsr()?;
 
         let (mut num_rows, mut num_cols) = (0, 0);
         let (mut row_start, mut row_end, mut col_start, mut col_end) = (0, 0, 0, 0);
@@ -476,15 +483,20 @@ impl Matrix<'_> {
     }
 }
 
-/// Square matrix that is symmetric by construction.
+/// Square matrix that is symmetric, stored as an `M`.
 ///
-/// hypre always stores both triangles, so entries are given for the lower
-/// triangle only (`col <= row`) and each off-diagonal entry `(i, j, v)` is also
-/// added at `(j, i)`. Solvers that need a symmetric matrix, such as
-/// [PCGSolver](crate::solvers::PCGSolver), only accept this type.
+/// hypre always stores both triangles. A `SymmetricMatrix<IJMatrix>`
+/// (made by [SymmetricMatrix::new] or
+/// [HypreContext::symmetric_matrix]) is symmetric by construction: entries
+/// are given for the lower triangle only (`col <= row`) and each
+/// off-diagonal entry `(i, j, v)` is also added at `(j, i)`. Other matrices
+/// become symmetric ones after a runtime check ([SymmetricMatrix::try_from])
+/// or on the caller's word ([SymmetricMatrix::from_matrix_unchecked]).
 ///
-/// It is also a [Matrix]: it dereferences to one (see its `Deref`
-/// implementation), so it can be passed wherever a `&Matrix` is expected.
+/// Solvers that need a symmetric matrix, such as
+/// [PCGSolver](crate::solvers::PCGSolver), only accept this type. It is also
+/// a [Matrix], so every solver accepts it, and it dereferences to `M` (read
+/// only: changing `M` could break the symmetry).
 ///
 /// # Example
 ///
@@ -493,6 +505,7 @@ impl Matrix<'_> {
 /// ```
 /// # fn main() -> Result<(), Box<dyn std::error::Error>> {
 /// # use mpi::topology::Communicator;
+/// use hypre_rs::Matrix;
 /// # let universe = mpi::initialize().ok_or("MPI was already initialized (or finalized) in this process")?;
 /// # let comm = universe.world();
 /// # let ctx = hypre_rs::initialize(&universe)?;
@@ -502,18 +515,20 @@ impl Matrix<'_> {
 /// // Diagonal and sub-diagonal; the super-diagonal is added by symmetry.
 /// laplacian.add_elements(rows.clone().map(|i| (i, i, 2.0)))?;
 /// laplacian.add_elements(rows.filter(|&i| i > 0).map(|i| (i, i - 1, -1.0)))?;
+/// assert!(laplacian.is_symmetric(0.0)?);
 /// # drop(laplacian);
 /// # ctx.finalize()?;
 /// # Ok(())
 /// # }
 /// ```
 #[derive(Debug)]
-pub struct SymmetricMatrix<'h> {
-    /// Symmetric: only filled through [SymmetricMatrix::add_elements].
-    matrix: Matrix<'h>,
+pub struct SymmetricMatrix<M: ?Sized> {
+    /// Symmetric: only filled through [SymmetricMatrix::add_elements], or
+    /// checked (or vouched for) on conversion.
+    matrix: M,
 }
 
-impl<'h> SymmetricMatrix<'h> {
+impl<'h> SymmetricMatrix<IJMatrix<'h>> {
     /// Creates an empty symmetric matrix, stored as an [IJMatrix].
     ///
     /// `rows` is the half-open range of global rows owned by the current MPI
@@ -530,7 +545,7 @@ impl<'h> SymmetricMatrix<'h> {
         rows: Range<u32>,
     ) -> HypreResult<Self> {
         Ok(Self {
-            matrix: IJ(IJMatrix::new(hypre, comm, rows.clone(), rows)?),
+            matrix: IJMatrix::new(hypre, comm, rows.clone(), rows)?,
         })
     }
 
@@ -545,7 +560,6 @@ impl<'h> SymmetricMatrix<'h> {
     /// # Errors
     ///
     /// - [HypreError::NotLowerTriangular] if an entry has `col > row`,
-    /// - [HypreError::NotIJMatrix] after [SymmetricMatrix::into_csr],
     /// - [HypreError::ConversionError] if an index or value does not fit
     ///   hypre's types,
     ///
@@ -557,35 +571,39 @@ impl<'h> SymmetricMatrix<'h> {
         HypreError: From<<Id as TryInto<HYPRE_BigInt>>::Error>,
         HypreError: From<<V as TryInto<HYPRE_Complex>>::Error>,
     {
-        let IJ(ij) = &mut self.matrix else {
-            return Err(HypreError::NotIJMatrix);
-        };
         let (rows, cols, values): (Vec<_>, Vec<_>, Vec<_>) = mirror_lower(convert_entries(nnz)?)?
             .into_iter()
             .multiunzip();
-        ij.add_to_values(&rows, &cols, &values)
+        self.matrix.add_to_values(&rows, &cols, &values)
     }
 
     /// Converts the matrix to the [CSRMatrix] format; see
     /// `TryFrom<IJMatrix> for CSRMatrix`.
     ///
-    /// Assembles the matrix, so it is collective. The matrix cannot be
-    /// modified afterwards. Converting a matrix that is already in CSR format
-    /// does nothing.
-    pub fn into_csr(self) -> HypreResult<Self> {
-        let matrix = match self.matrix {
-            IJ(ij) => ParCSR(CSRMatrix::try_from(ij)?),
-            csr @ ParCSR(_) => csr,
-        };
-        Ok(Self { matrix })
-    }
-
-    pub(crate) fn get_internal(&self) -> HypreResult<HYPRE_Matrix> {
-        self.matrix.get_internal()
+    /// Assembles the matrix, so it is collective. A
+    /// `SymmetricMatrix<CSRMatrix>` has no `add_elements`: it cannot be
+    /// modified afterwards.
+    ///
+    /// ```compile_fail
+    /// # fn main() -> Result<(), Box<dyn std::error::Error>> {
+    /// # let universe = mpi::initialize().ok_or("MPI was already initialized (or finalized) in this process")?;
+    /// # let comm = universe.world();
+    /// # let ctx = hypre_rs::initialize(&universe)?;
+    /// let mut matrix = ctx.symmetric_matrix(&comm, 0..1)?;
+    /// matrix.add_elements([(0u32, 0u32, 1.0)].into_iter())?;
+    /// let mut csr = matrix.into_csr()?;
+    /// csr.add_elements([(0u32, 0u32, 1.0)].into_iter())?; // no such method
+    /// # Ok(())
+    /// # }
+    /// ```
+    pub fn into_csr(self) -> HypreResult<SymmetricMatrix<CSRMatrix<'h>>> {
+        Ok(SymmetricMatrix {
+            matrix: CSRMatrix::try_from(self.matrix)?,
+        })
     }
 }
 
-impl<'h> SymmetricMatrix<'h> {
+impl<M: Matrix> SymmetricMatrix<M> {
     /// Converts `matrix` if it is symmetric up to `tol`; see
     /// [Matrix::is_symmetric], which is collective.
     ///
@@ -597,7 +615,7 @@ impl<'h> SymmetricMatrix<'h> {
     /// [HypreError::NotSymmetric] if it is not (the matrix is dropped; call
     /// [Matrix::is_symmetric] first to keep it), or the errors of
     /// [Matrix::is_symmetric].
-    pub fn try_from_with_tolerance(matrix: Matrix<'h>, tol: f64) -> HypreResult<Self> {
+    pub fn try_from_with_tolerance(matrix: M, tol: f64) -> HypreResult<Self> {
         if matrix.is_symmetric(tol)? {
             Ok(Self { matrix })
         } else {
@@ -625,7 +643,7 @@ impl<'h> SymmetricMatrix<'h> {
     /// ```
     /// # fn main() -> Result<(), Box<dyn std::error::Error>> {
     /// # use mpi::topology::Communicator;
-    /// use hypre_rs::{Matrix, SymmetricMatrix};
+    /// use hypre_rs::SymmetricMatrix;
     /// # let universe = mpi::initialize().ok_or("MPI was already initialized (or finalized) in this process")?;
     /// # let comm = universe.world();
     /// # let ctx = hypre_rs::initialize(&universe)?;
@@ -634,14 +652,19 @@ impl<'h> SymmetricMatrix<'h> {
     /// // Diagonal, so symmetric: no need to check it.
     /// let mut ij = ctx.ij_matrix(&comm, rows.clone(), rows.clone())?;
     /// ij.add_elements(rows.map(|i| (i, i, 2.0)))?;
-    /// let diagonal = SymmetricMatrix::from_matrix_unchecked(Matrix::IJ(ij));
+    /// let diagonal = SymmetricMatrix::from_matrix_unchecked(ij);
     /// # drop(diagonal);
     /// # ctx.finalize()?;
     /// # Ok(())
     /// # }
     /// ```
-    pub fn from_matrix_unchecked(matrix: Matrix<'h>) -> Self {
+    pub fn from_matrix_unchecked(matrix: M) -> Self {
         Self { matrix }
+    }
+
+    /// Returns the matrix, forgetting that it is symmetric.
+    pub fn into_inner(self) -> M {
+        self.matrix
     }
 }
 
@@ -655,7 +678,7 @@ impl<'h> SymmetricMatrix<'h> {
 /// ```
 /// # fn main() -> Result<(), Box<dyn std::error::Error>> {
 /// # use mpi::topology::Communicator;
-/// use hypre_rs::{Matrix, SymmetricMatrix};
+/// use hypre_rs::SymmetricMatrix;
 /// # let universe = mpi::initialize().ok_or("MPI was already initialized (or finalized) in this process")?;
 /// # let comm = universe.world();
 /// # let ctx = hypre_rs::initialize(&universe)?;
@@ -669,66 +692,51 @@ impl<'h> SymmetricMatrix<'h> {
 ///         ij.add_elements([(i, i - 1, -1.0), (i - 1, i, -1.0)].into_iter())?;
 ///     }
 /// }
-/// let laplacian = SymmetricMatrix::try_from(Matrix::IJ(ij))?;
+/// let laplacian = SymmetricMatrix::try_from(ij)?;
 /// # drop(laplacian);
 /// # ctx.finalize()?;
 /// # Ok(())
 /// # }
 /// ```
-impl<'h> TryFrom<Matrix<'h>> for SymmetricMatrix<'h> {
+impl<'h> TryFrom<IJMatrix<'h>> for SymmetricMatrix<IJMatrix<'h>> {
     type Error = HypreError;
 
-    fn try_from(matrix: Matrix<'h>) -> Result<Self, Self::Error> {
+    fn try_from(matrix: IJMatrix<'h>) -> Result<Self, Self::Error> {
         Self::try_from_with_tolerance(matrix, 0.0)
     }
 }
 
-/// Forgets that the matrix is symmetric.
-/// A symmetric matrix is a [Matrix]: `&SymmetricMatrix` can be used wherever
-/// a `&Matrix` is expected, and [Matrix] methods can be called on it.
-///
-/// There is no `DerefMut`: changing the matrix through a `&mut Matrix`
-/// (for example adding entries to its [IJMatrix]) could break the symmetry.
-/// Use [SymmetricMatrix::add_elements] instead.
-///
-/// # Example
-///
-/// ```
-/// # fn main() -> Result<(), Box<dyn std::error::Error>> {
-/// # use mpi::topology::Communicator;
-/// use hypre_rs::Matrix;
-/// # let universe = mpi::initialize().ok_or("MPI was already initialized (or finalized) in this process")?;
-/// # let comm = universe.world();
-/// # let ctx = hypre_rs::initialize(&universe)?;
-/// # let (rank, size) = (comm.rank() as u32, comm.size() as u32);
-/// let rows = (rank * 10 / size)..((rank + 1) * 10 / size);
-/// let mut laplacian = ctx.symmetric_matrix(&comm, rows.clone())?;
-/// laplacian.add_elements(rows.clone().map(|i| (i, i, 2.0)))?;
-/// laplacian.add_elements(rows.filter(|&i| i > 0).map(|i| (i, i - 1, -1.0)))?;
-///
-/// // Any function taking a `&Matrix` accepts it.
-/// fn check(matrix: &Matrix<'_>) -> Result<bool, hypre_rs::HypreError> {
-///     matrix.is_symmetric(0.0)
-/// }
-/// assert!(check(&laplacian)?);
-/// # drop(laplacian);
-/// # ctx.finalize()?;
-/// # Ok(())
-/// # }
-/// ```
-impl<'h> Deref for SymmetricMatrix<'h> {
-    type Target = Matrix<'h>;
+/// Checks that the matrix is exactly symmetric, at runtime; see
+/// `TryFrom<IJMatrix>`.
+// One impl per type: a generic `impl<M: Matrix> TryFrom<M>` conflicts with
+// core's blanket `TryFrom<U> for T where U: Into<T>`.
+impl<'h> TryFrom<CSRMatrix<'h>> for SymmetricMatrix<CSRMatrix<'h>> {
+    type Error = HypreError;
 
-    fn deref(&self) -> &Matrix<'h> {
+    fn try_from(matrix: CSRMatrix<'h>) -> Result<Self, Self::Error> {
+        Self::try_from_with_tolerance(matrix, 0.0)
+    }
+}
+
+/// Read-only access to the stored matrix. There is no `DerefMut`: changing
+/// the matrix (for example adding entries to its [IJMatrix]) could break the
+/// symmetry. Use [SymmetricMatrix::add_elements] instead.
+impl<M: ?Sized> Deref for SymmetricMatrix<M> {
+    type Target = M;
+
+    fn deref(&self) -> &M {
         &self.matrix
     }
 }
 
-impl<'h> From<SymmetricMatrix<'h>> for Matrix<'h> {
-    fn from(symmetric: SymmetricMatrix<'h>) -> Self {
-        symmetric.matrix
+impl<M: Matrix + ?Sized> sealed::AsParCSR for SymmetricMatrix<M> {
+    fn as_parcsr(&self) -> HypreResult<HYPRE_ParCSRMatrix> {
+        self.matrix.as_parcsr()
     }
 }
+
+/// A symmetric matrix is a [Matrix]: every solver accepts it.
+impl<M: Matrix + ?Sized> Matrix for SymmetricMatrix<M> {}
 
 /// Checks a relative tolerance: it must be a non-negative number.
 fn check_tolerance(tol: f64) -> HypreResult<()> {

@@ -5,10 +5,9 @@ use std::marker::PhantomData;
 use std::ptr::null_mut;
 
 use crate::error::HypreError;
-use crate::matrix::Matrix;
 use crate::preconditioners::Preconditioner;
 use crate::solvers::{IterativeSolverStatus, LinearSolver};
-use crate::{HypreContext, HypreResult, Vector};
+use crate::{HypreContext, HypreResult};
 use hypre_sys::*;
 
 hypre_solver! {
@@ -23,7 +22,7 @@ hypre_solver! {
     config BiCGSTABSolverConfig, BiCGSTABSolverConfigBuilder;
     create HYPRE_ParCSRBiCGSTABCreate, destroy HYPRE_ParCSRBiCGSTABDestroy;
     setup HYPRE_ParCSRBiCGSTABSetup, solve HYPRE_ParCSRBiCGSTABSolve;
-    solves LinearSolver for Matrix;
+    solves LinearSolver for M;
     status HYPRE_ParCSRBiCGSTABGetNumIterations,
         HYPRE_ParCSRBiCGSTABGetFinalRelativeResidualNorm;
     precond HYPRE_ParCSRBiCGSTABSetPrecond, Preconditioner;

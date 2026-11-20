@@ -1,6 +1,5 @@
 extern crate hypre_rs;
 use hypre_rs::solvers::{PCGSolverConfigBuilder, SymmetricLinearSolver, SymmetricSolver};
-use hypre_rs::Vector;
 use mpi::topology::Communicator;
 
 fn main() -> Result<(), Box<dyn std::error::Error>> {
@@ -56,13 +55,11 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     // Create new CG solver with previous parameters
     let solver = SymmetricSolver::CG(ctx.pcg_solver(&mpi_comm, my_parameters)?);
 
-    let c_rhs = Vector::IJ(rhs);
-    let mut c_x = Vector::IJ(x);
-    let info = solver.solve(&matrix, &c_rhs, &mut c_x)?;
+    let info = solver.solve(&matrix, &rhs, &mut x)?;
     println!("Solver has converged: {}", info);
 
     // hypre objects must be dropped before hypre is finalized (checked by the compiler)
-    drop((solver, matrix, c_rhs, c_x));
+    drop((solver, matrix, rhs, x));
     ctx.finalize()?;
     Ok(())
 }

@@ -6,10 +6,9 @@ use std::marker::PhantomData;
 use std::ptr::null_mut;
 
 use crate::error::HypreError;
-use crate::matrix::Matrix;
 use crate::preconditioners::Preconditioner;
 use crate::solvers::{IterativeSolverStatus, LinearSolver};
-use crate::{HypreContext, HypreResult, Vector};
+use crate::{HypreContext, HypreResult};
 use hypre_sys::*;
 
 hypre_solver! {
@@ -41,7 +40,7 @@ hypre_solver! {
     config GMRESSolverConfig, GMRESSolverConfigBuilder;
     create HYPRE_ParCSRGMRESCreate, destroy HYPRE_ParCSRGMRESDestroy;
     setup HYPRE_ParCSRGMRESSetup, solve HYPRE_ParCSRGMRESSolve;
-    solves LinearSolver for Matrix;
+    solves LinearSolver for M;
     status HYPRE_ParCSRGMRESGetNumIterations, HYPRE_ParCSRGMRESGetFinalRelativeResidualNorm,
         converged HYPRE_GMRESGetConverged;
     precond HYPRE_ParCSRGMRESSetPrecond, Preconditioner;
@@ -82,7 +81,7 @@ hypre_solver! {
     config FlexGMRESSolverConfig, FlexGMRESSolverConfigBuilder;
     create HYPRE_ParCSRFlexGMRESCreate, destroy HYPRE_ParCSRFlexGMRESDestroy;
     setup HYPRE_ParCSRFlexGMRESSetup, solve HYPRE_ParCSRFlexGMRESSolve;
-    solves LinearSolver for Matrix;
+    solves LinearSolver for M;
     status HYPRE_ParCSRFlexGMRESGetNumIterations,
         HYPRE_ParCSRFlexGMRESGetFinalRelativeResidualNorm,
         converged HYPRE_FlexGMRESGetConverged;
@@ -124,7 +123,7 @@ hypre_solver! {
     config LGMRESSolverConfig, LGMRESSolverConfigBuilder;
     create HYPRE_ParCSRLGMRESCreate, destroy HYPRE_ParCSRLGMRESDestroy;
     setup HYPRE_ParCSRLGMRESSetup, solve HYPRE_ParCSRLGMRESSolve;
-    solves LinearSolver for Matrix;
+    solves LinearSolver for M;
     status HYPRE_ParCSRLGMRESGetNumIterations, HYPRE_ParCSRLGMRESGetFinalRelativeResidualNorm,
         converged HYPRE_LGMRESGetConverged;
     precond HYPRE_ParCSRLGMRESSetPrecond, Preconditioner;
@@ -167,7 +166,7 @@ hypre_solver! {
     config COGMRESSolverConfig, COGMRESSolverConfigBuilder;
     create HYPRE_ParCSRCOGMRESCreate, destroy HYPRE_ParCSRCOGMRESDestroy;
     setup HYPRE_ParCSRCOGMRESSetup, solve HYPRE_ParCSRCOGMRESSolve;
-    solves LinearSolver for Matrix;
+    solves LinearSolver for M;
     status HYPRE_ParCSRCOGMRESGetNumIterations,
         HYPRE_ParCSRCOGMRESGetFinalRelativeResidualNorm,
         converged HYPRE_COGMRESGetConverged;

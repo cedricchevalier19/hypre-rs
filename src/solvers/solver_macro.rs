@@ -41,10 +41,11 @@ impl FromHypre<HYPRE_Int> for bool {
 ///   the `positive` parameters,
 /// - `current_config` when hypre has getters for the parameters,
 /// - with `setup`, `solve`, `solves Trait for MatrixType` and `status`, the
-///   solver trait
-///   ([LinearSolver](crate::solvers::LinearSolver) for `Matrix`, or
-///   [SymmetricLinearSolver](crate::solvers::SymmetricLinearSolver) for
-///   `SymmetricMatrix`); preconditioners leave it out,
+///   solver trait; `MatrixType` is written in terms of the generic matrix
+///   `M` of `solve`: `M` for [LinearSolver](crate::solvers::LinearSolver),
+///   `SymmetricMatrix<M>` for
+///   [SymmetricLinearSolver](crate::solvers::SymmetricLinearSolver).
+///   Preconditioners leave it out,
 /// - with `precond SetPrecond, PreconditionerType`, an owned preconditioner
 ///   (`with_preconditioner`, `preconditioner`), set with hypre's
 ///   `SetPrecond` function.
@@ -64,7 +65,7 @@ macro_rules! hypre_solver {
         create $create:path, destroy $destroy:path;
         $(
             setup $setup:path, solve $solve:path;
-            solves $Trait:ident for $Mat:ident;
+            solves $Trait:ident for $MatTy:ty;
             status $num_iters:path, $res_norm:path $(, converged $converged:path)?;
         )?
         $( precond $set_precond:path, $Precond:ident; )?
@@ -191,15 +192,15 @@ macro_rules! hypre_solver {
 
         $(
         impl $Trait for $Solver<'_> {
-            fn solve(
+            fn solve<M: $crate::Matrix + ?Sized>(
                 &self,
-                mat: &$Mat<'_>,
-                rhs: &Vector<'_>,
-                x: &mut Vector<'_>,
+                mat: &$MatTy,
+                rhs: &$crate::vector::IJVector<'_>,
+                x: &mut $crate::vector::IJVector<'_>,
             ) -> HypreResult<IterativeSolverStatus> {
-                let a = mat.get_internal()? as HYPRE_ParCSRMatrix;
-                let b = rhs.get_internal()? as HYPRE_ParVector;
-                let x = x.get_internal()? as HYPRE_ParVector;
+                let a = $crate::matrix::sealed::AsParCSR::as_parcsr(mat)?;
+                let b = rhs.as_par_vector()?;
+                let x = x.as_par_vector()?;
                 unsafe {
                     check_hypre!($setup(self.internal_solver, a, b, x));
                     // A solve that does not converge returns HYPRE_ERROR_CONV.

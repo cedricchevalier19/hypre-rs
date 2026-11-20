@@ -2,7 +2,7 @@
 //! values of the solution, not just that the solver converged.
 
 use hypre_rs::solvers::{PCGSolverConfigBuilder, SymmetricLinearSolver, SymmetricSolver};
-use hypre_rs::{HypreError, Vector};
+use hypre_rs::HypreError;
 use mpi::topology::Communicator;
 
 /// Global number of rows; not a multiple of 2 or 3, so ranks get uneven rows.
@@ -38,11 +38,9 @@ fn laplacian_solution_values() -> Result<(), Box<dyn std::error::Error>> {
             rows.clone()
                 .map(|i| (i, if i == 0 || i == N - 1 { 1.0 } else { 0.0 })),
         )?;
-        let b = Vector::IJ(b);
 
         let mut x = ctx.ij_vector(&comm, rows.clone())?;
         x.add_elements(rows.clone().map(|i| (i, 0.0)))?;
-        let mut x = Vector::IJ(x);
 
         // Too few iterations: hypre reports a convergence error.
         let config = PCGSolverConfigBuilder::default()
@@ -66,7 +64,6 @@ fn laplacian_solution_values() -> Result<(), Box<dyn std::error::Error>> {
         let status = solver.solve(&a, &b, &mut x)?;
         assert!(status.converged, "{status}");
 
-        let Vector::IJ(x) = &x;
         let values = x.get_values(rows.clone())?;
         assert_eq!(values.len(), rows.len());
         for (i, v) in rows.zip(values) {

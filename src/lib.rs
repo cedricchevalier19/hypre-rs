@@ -12,7 +12,6 @@
 //! extern crate hypre_rs;
 //! # use mpi::initialize;
 //! # use mpi::topology::Communicator;
-//! use hypre_rs::Vector;
 //! use hypre_rs::solvers::{PCGSolverConfigBuilder, SymmetricLinearSolver, SymmetricSolver};
 //!
 //! let universe = mpi::initialize().ok_or("MPI was already initialized (or finalized) in this process")?;
@@ -32,8 +31,7 @@
 //!
 //! let mut rhs = ctx.ij_vector(&mpi_comm, rows.clone())?;
 //! rhs.add_elements(rows.clone().map(|i| (i, 1.0)))?;
-//! let rhs = Vector::IJ(rhs);
-//! let mut x = Vector::IJ(ctx.ij_vector(&mpi_comm, rows)?);
+//! let mut x = ctx.ij_vector(&mpi_comm, rows)?;
 //!
 //! // CG solver parameters
 //! let my_parameters = PCGSolverConfigBuilder::default()
@@ -77,7 +75,7 @@ pub mod vector;
 type HypreResult<T> = Result<T, error::HypreError>;
 pub use error::HypreError;
 pub use matrix::{Matrix, SymmetricMatrix};
-pub use vector::Vector;
+pub use vector::IJVector;
 
 mod context;
 pub use context::{initialize, HypreContext};

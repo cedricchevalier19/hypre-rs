@@ -1,7 +1,8 @@
 //! The algebraic multigrid solver (BoomerAMG), on any number of MPI ranks.
 
 use hypre_rs::solvers::{AMGSolver, AMGSolverConfigBuilder, LinearSolver, Solver};
-use hypre_rs::{HypreContext, HypreError, Matrix, Vector};
+use hypre_rs::vector::IJVector;
+use hypre_rs::{HypreContext, HypreError, Matrix};
 use mpi::topology::{Communicator, SimpleCommunicator};
 use std::ops::Range;
 
@@ -14,10 +15,10 @@ fn rhs<'a>(
     ctx: &'a HypreContext<'_>,
     comm: &'a SimpleCommunicator,
     rows: Range<u32>,
-) -> Result<Vector<'a>, HypreError> {
+) -> Result<IJVector<'a>, HypreError> {
     let mut b = ctx.ij_vector(comm, rows.clone())?;
     b.add_elements(rows.map(|i| (i, if i == 0 || i == N - 1 { 1.0 } else { 0.0 })))?;
-    Ok(Vector::IJ(b))
+    Ok(b)
 }
 
 /// Solves `a * x = b` from `x = 0` and checks that `x = [1, ..., 1]`.
@@ -26,16 +27,14 @@ fn check_solution(
     comm: &SimpleCommunicator,
     rows: Range<u32>,
     solver: &Solver<'_>,
-    a: &Matrix<'_>,
-    b: &Vector<'_>,
+    a: &(impl Matrix + ?Sized),
+    b: &IJVector<'_>,
 ) -> Result<(), Box<dyn std::error::Error>> {
     let mut x = ctx.ij_vector(comm, rows.clone())?;
     x.add_elements(rows.clone().map(|i| (i, 0.0)))?;
-    let mut x = Vector::IJ(x);
     let status = solver.solve(a, b, &mut x)?;
     assert!(status.converged, "{status}");
     assert!(status.res_num <= 1e-10, "{status}");
-    let Vector::IJ(x) = &x;
     for (i, v) in rows.clone().zip(x.get_values(rows)?) {
         assert!((v - 1.0).abs() < 1e-6, "x[{i}] = {v}, expected 1");
     }
@@ -53,7 +52,7 @@ fn amg_solver() -> Result<(), Box<dyn std::error::Error>> {
         let (rank, size) = (comm.rank() as u32, comm.size() as u32);
         let rows = (rank * N / size)..((rank + 1) * N / size);
 
-        // The 1D Laplacian, as a SymmetricMatrix: AMG accepts it through Deref.
+        // The 1D Laplacian, as a SymmetricMatrix: every solver accepts it.
         let mut a = ctx.symmetric_matrix(&comm, rows.clone())?;
         a.add_elements(rows.clone().map(|i| (i, i, 2.0)))?;
         a.add_elements(rows.clone().filter(|&i| i > 0).map(|i| (i, i - 1, -1.0)))?;
@@ -84,7 +83,7 @@ fn amg_solver() -> Result<(), Box<dyn std::error::Error>> {
             .max_iters(1usize)
             .build()?;
         let solver = Solver::AMG(ctx.amg_solver(&comm, config)?);
-        let mut x = Vector::IJ(ctx.ij_vector(&comm, rows.clone())?);
+        let mut x = ctx.ij_vector(&comm, rows.clone())?;
         assert!(matches!(
             solver.solve(&a, &b, &mut x),
             Err(HypreError::HypreConvError)
