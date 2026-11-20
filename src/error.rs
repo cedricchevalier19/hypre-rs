@@ -23,6 +23,10 @@ pub enum HypreError {
     UnknowError,
     #[error("Invalid parameter, should be positive")]
     InvalidParameterPositive,
+    /// hypre returned an option value that the matching enum does not
+    /// list (for example a newer hypre option).
+    #[error("Unknown option value {0} returned by hypre")]
+    UnknownOptionValue(hypre_sys::HYPRE_Int),
     #[error("Invalid range: start is greater than end")]
     InvalidRange,
     #[error("hypre is already initialized")]

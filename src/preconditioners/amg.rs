@@ -11,6 +11,7 @@ use std::ptr::null_mut;
 
 use super::RawPreconditioner;
 use crate::error::HypreError;
+use crate::solvers::{CoarsenType, CycleType, InterpType, Smoother};
 use crate::{HypreContext, HypreResult};
 use hypre_sys::*;
 
@@ -100,18 +101,18 @@ hypre_solver! {
         trunc_factor: f64 => HYPRE_BoomerAMGSetTruncFactor,
         /// Maximum number of elements per row of the interpolation
         p_max_elmts: usize => HYPRE_BoomerAMGSetPMaxElmts,
-        /// Coarsening algorithm (6: Falgout, 8: PMIS, 10: HMIS, ...)
-        coarsen_type: u32 => HYPRE_BoomerAMGSetCoarsenType,
-        /// Interpolation operator (0: classical, 6: extended+i, ...)
-        interp_type: u32 => HYPRE_BoomerAMGSetInterpType,
-        /// Smoother on every level
+        /// Coarsening algorithm
+        coarsen_type: CoarsenType => HYPRE_BoomerAMGSetCoarsenType,
+        /// Interpolation operator
+        interp_type: InterpType => HYPRE_BoomerAMGSetInterpType,
+        /// Smoother on every level but the coarsest
         relax_type: SymmetricSmoother => HYPRE_BoomerAMGSetRelaxType,
         /// Relaxation weight of the weighted Jacobi smoother
         relax_wt: f64 => HYPRE_BoomerAMGSetRelaxWt,
         /// Number of smoother sweeps on every level
         num_sweeps: usize => HYPRE_BoomerAMGSetNumSweeps,
-        /// Multigrid cycle (1: V-cycle, 2: W-cycle)
-        cycle_type: u32 => HYPRE_BoomerAMGSetCycleType,
+        /// Multigrid cycle
+        cycle_type: CycleType => HYPRE_BoomerAMGSetCycleType,
         /// Number of levels with aggressive coarsening
         agg_num_levels: usize => HYPRE_BoomerAMGSetAggNumLevels,
         /// Logging level
@@ -170,21 +171,20 @@ hypre_solver! {
         trunc_factor: f64 => HYPRE_BoomerAMGSetTruncFactor,
         /// Maximum number of elements per row of the interpolation
         p_max_elmts: usize => HYPRE_BoomerAMGSetPMaxElmts,
-        /// Coarsening algorithm (6: Falgout, 8: PMIS, 10: HMIS, ...)
-        coarsen_type: u32 => HYPRE_BoomerAMGSetCoarsenType,
-        /// Interpolation operator (0: classical, 6: extended+i, ...)
-        interp_type: u32 => HYPRE_BoomerAMGSetInterpType,
-        /// Smoother on every level (3: hybrid Gauss-Seidel, 6: symmetric
-        /// hybrid Gauss-Seidel, 8: ℓ1 symmetric Gauss-Seidel, ...)
-        relax_type: u32 => HYPRE_BoomerAMGSetRelaxType,
+        /// Coarsening algorithm
+        coarsen_type: CoarsenType => HYPRE_BoomerAMGSetCoarsenType,
+        /// Interpolation operator
+        interp_type: InterpType => HYPRE_BoomerAMGSetInterpType,
+        /// Smoother on every level but the coarsest
+        relax_type: Smoother => HYPRE_BoomerAMGSetRelaxType,
         /// Relax C points before F points (`false`: lexicographic order)
         relax_order: bool => HYPRE_BoomerAMGSetRelaxOrder,
         /// Relaxation weight of the weighted Jacobi and SOR smoothers
         relax_wt: f64 => HYPRE_BoomerAMGSetRelaxWt,
         /// Number of smoother sweeps on every level
         num_sweeps: usize => HYPRE_BoomerAMGSetNumSweeps,
-        /// Multigrid cycle (1: V-cycle, 2: W-cycle)
-        cycle_type: u32 => HYPRE_BoomerAMGSetCycleType,
+        /// Multigrid cycle
+        cycle_type: CycleType => HYPRE_BoomerAMGSetCycleType,
         /// Number of levels with aggressive coarsening
         agg_num_levels: usize => HYPRE_BoomerAMGSetAggNumLevels,
         /// Logging level

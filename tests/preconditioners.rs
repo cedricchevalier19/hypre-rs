@@ -6,9 +6,9 @@ use hypre_rs::preconditioners::{
     SymmetricAMGPreconditionerConfigBuilder, SymmetricPreconditioner, SymmetricSmoother,
 };
 use hypre_rs::solvers::{
-    BiCGSTABSolverConfigBuilder, COGMRESSolverConfigBuilder, FlexGMRESSolverConfigBuilder,
-    GMRESSolverConfigBuilder, IterativeSolverStatus, LGMRESSolverConfigBuilder,
-    PCGSolverConfigBuilder, Solver,
+    BiCGSTABSolverConfigBuilder, COGMRESSolverConfigBuilder, CoarsenType, CycleType,
+    FlexGMRESSolverConfigBuilder, GMRESSolverConfigBuilder, IterativeSolverStatus,
+    LGMRESSolverConfigBuilder, PCGSolverConfigBuilder, Smoother, Solver,
 };
 use hypre_rs::vector::ParVector;
 use hypre_rs::{HypreContext, HypreError, SymmetricMatrix};
@@ -181,7 +181,7 @@ fn preconditioners() -> TestResult {
         // Two W-cycles per application.
         amg_configs.push(
             *SymmetricAMGPreconditionerConfigBuilder::default()
-                .cycle_type(2)
+                .cycle_type(CycleType::W)
                 .max_iters(2),
         );
         for config in amg_configs {
@@ -254,7 +254,7 @@ fn preconditioners() -> TestResult {
         // Forward hybrid Gauss-Seidel, C points first: not symmetric.
         let amg = || {
             let config = AMGPreconditionerConfigBuilder::default()
-                .relax_type(3)
+                .relax_type(Smoother::HybridGaussSeidelForward)
                 .relax_order(true)
                 .build()?;
             Ok(ctx.amg_preconditioner(&comm, config)?.into())
@@ -275,11 +275,11 @@ fn preconditioners() -> TestResult {
         // The general AMG preconditioner reads back its configuration.
         let config = AMGPreconditionerConfigBuilder::default()
             .max_iters(2)
-            .coarsen_type(8)
+            .coarsen_type(CoarsenType::Pmis)
             .build()?;
         let current = ctx.amg_preconditioner(&comm, config)?.current_config()?;
         assert_eq!(current.max_iters, Some(2));
-        assert_eq!(current.coarsen_type, Some(8));
+        assert_eq!(current.coarsen_type, Some(CoarsenType::Pmis));
     }
     // hypre objects must be dropped before hypre is finalized (checked by the compiler)
     ctx.finalize()?;

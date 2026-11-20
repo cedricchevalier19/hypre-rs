@@ -7,7 +7,7 @@ use std::ptr::null_mut;
 
 use crate::error::HypreError;
 use crate::preconditioners::Preconditioner;
-use crate::solvers::{IterativeSolverStatus, LinearSolver};
+use crate::solvers::{GramSchmidtPasses, IterativeSolverStatus, LinearSolver};
 use crate::{HypreContext, HypreResult};
 use hypre_sys::*;
 
@@ -186,9 +186,8 @@ hypre_solver! {
         k_dim: usize => HYPRE_ParCSRCOGMRESSetKDim,
         /// Loop unrolling factor of the orthogonalization
         unroll: u32 => HYPRE_ParCSRCOGMRESSetUnroll,
-        /// Gram-Schmidt variant: 1 for classical Gram-Schmidt, 2 for
-        /// classical Gram-Schmidt with reorthogonalization
-        cgs: u32 => HYPRE_ParCSRCOGMRESSetCGS,
+        /// Gram-Schmidt passes per orthogonalization
+        cgs: GramSchmidtPasses => HYPRE_ParCSRCOGMRESSetCGS,
         /// Logging level (1 stores the residual norms)
         logging: u32 => HYPRE_ParCSRCOGMRESSetLogging,
         /// Print level (0: nothing, 2: residual norm of every iteration)

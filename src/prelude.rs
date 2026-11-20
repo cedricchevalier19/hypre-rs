@@ -5,7 +5,7 @@
 //! ```
 //!
 //! It brings in the context, matrices and vectors, the solvers'
-//! configuration builders and runtime-choice enums, the solver traits for
+//! configuration builders, option enums and runtime-choice enums, the solver traits for
 //! generic code, and the preconditioners. Solver and configuration types
 //! themselves (`PCGSolver`, `GMRESSolverConfig`, ...) are rarely named in
 //! user code, so they stay in [solvers](crate::solvers) and
@@ -47,10 +47,10 @@ pub use crate::preconditioners::{
     SymmetricAMGPreconditionerConfigBuilder, SymmetricPreconditioner, SymmetricSmoother,
 };
 pub use crate::solvers::{
-    AMGSolverConfigBuilder, BiCGSTABSolverConfigBuilder, COGMRESSolverConfigBuilder,
-    FlexGMRESSolverConfigBuilder, GMRESSolverConfigBuilder, IterativeSolverStatus,
-    LGMRESSolverConfigBuilder, LinearSolver, PCGSolverConfigBuilder, Solver, SymmetricLinearSolver,
-    SymmetricSolver,
+    AMGSolverConfigBuilder, BiCGSTABSolverConfigBuilder, COGMRESSolverConfigBuilder, CoarsenType,
+    ConvergeType, CycleType, FlexGMRESSolverConfigBuilder, GMRESSolverConfigBuilder,
+    GramSchmidtPasses, InterpType, IterativeSolverStatus, LGMRESSolverConfigBuilder, LinearSolver,
+    PCGSolverConfigBuilder, Smoother, Solver, SymmetricLinearSolver, SymmetricSolver,
 };
 pub use crate::vector::{IJVector, ParVector};
 pub use crate::{distribute_rows, HypreContext, HypreError};

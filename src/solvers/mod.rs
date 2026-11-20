@@ -6,6 +6,7 @@ mod macros;
 pub(crate) mod solver_macro;
 mod amg;
 mod krylov;
+mod options;
 #[cfg(test)]
 mod tests;
 
@@ -23,6 +24,7 @@ pub use krylov::{
     LGMRESSolver, LGMRESSolverConfig, LGMRESSolverConfigBuilder, PCGSolver, PCGSolverConfig,
     PCGSolverConfigBuilder,
 };
+pub use options::{CoarsenType, ConvergeType, CycleType, GramSchmidtPasses, InterpType, Smoother};
 
 /// Solver status information
 #[derive(Debug, Clone, Copy)]

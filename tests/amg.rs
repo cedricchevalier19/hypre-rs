@@ -1,6 +1,8 @@
 //! The algebraic multigrid solver (BoomerAMG), on any number of MPI ranks.
 
-use hypre_rs::solvers::{AMGSolver, AMGSolverConfigBuilder};
+use hypre_rs::solvers::{
+    AMGSolver, AMGSolverConfigBuilder, CoarsenType, ConvergeType, CycleType, InterpType, Smoother,
+};
 use hypre_rs::vector::ParVector;
 use hypre_rs::{HypreContext, HypreError, Matrix};
 use mpi::topology::SimpleCommunicator;
@@ -66,14 +68,14 @@ fn amg_solver() -> Result<(), Box<dyn std::error::Error>> {
         let configs = [
             AMGSolverConfigBuilder::default(),
             *AMGSolverConfigBuilder::default()
-                .coarsen_type(6) // Falgout
-                .interp_type(0) // classical
-                .relax_type(6) // symmetric hybrid Gauss-Seidel
+                .coarsen_type(CoarsenType::Falgout)
+                .interp_type(InterpType::ClassicalModified)
+                .relax_type(Smoother::HybridSymmetricGaussSeidel)
                 .num_sweeps(2),
             *AMGSolverConfigBuilder::default()
-                .coarsen_type(8) // PMIS
+                .coarsen_type(CoarsenType::Pmis)
                 .agg_num_levels(1)
-                .cycle_type(2), // W-cycle
+                .cycle_type(CycleType::W),
         ];
         for mut config in configs {
             let config = config.tol(1e-10).max_iters(100).build()?;
@@ -105,9 +107,9 @@ fn amg_solver() -> Result<(), Box<dyn std::error::Error>> {
             .max_row_sum(0.8)
             .trunc_factor(0.1)
             .p_max_elmts(3)
-            .coarsen_type(8)
-            .cycle_type(2)
-            .converge_type(1)
+            .coarsen_type(CoarsenType::Pmis)
+            .cycle_type(CycleType::W)
+            .converge_type(ConvergeType::RelativeToInitialResidual)
             .logging(1)
             .print_level(0)
             .build()?;
@@ -122,9 +124,12 @@ fn amg_solver() -> Result<(), Box<dyn std::error::Error>> {
         assert_eq!(current.max_row_sum, Some(0.8));
         assert_eq!(current.trunc_factor, Some(0.1));
         assert_eq!(current.p_max_elmts, Some(3));
-        assert_eq!(current.coarsen_type, Some(8));
-        assert_eq!(current.cycle_type, Some(2));
-        assert_eq!(current.converge_type, Some(1));
+        assert_eq!(current.coarsen_type, Some(CoarsenType::Pmis));
+        assert_eq!(current.cycle_type, Some(CycleType::W));
+        assert_eq!(
+            current.converge_type,
+            Some(ConvergeType::RelativeToInitialResidual)
+        );
         assert_eq!(current.logging, Some(1));
         assert_eq!(current.print_level, Some(0));
         // hypre has no getter for these.
@@ -135,12 +140,12 @@ fn amg_solver() -> Result<(), Box<dyn std::error::Error>> {
         // `config` changes an existing solver; unset fields keep their value.
         let update = AMGSolverConfigBuilder::default()
             .tol(1e-3)
-            .cycle_type(1)
+            .cycle_type(CycleType::V)
             .build()?;
         let solver = solver.config(update)?;
         let current = solver.current_config()?;
         assert_eq!(current.tol, Some(1e-3));
-        assert_eq!(current.cycle_type, Some(1));
+        assert_eq!(current.cycle_type, Some(CycleType::V));
         assert_eq!(current.max_iters, Some(42));
     }
     // hypre objects must be dropped before hypre is finalized (checked by the compiler)
