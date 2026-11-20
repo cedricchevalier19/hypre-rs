@@ -32,7 +32,7 @@ hypre_solver! {
     /// ```
     /// # fn main() -> Result<(), Box<dyn std::error::Error>> {
     /// # use mpi::topology::Communicator;
-    /// use hypre_rs::solvers::{AMGSolverConfigBuilder, LinearSolver, Solver};
+    /// use hypre_rs::solvers::AMGSolverConfigBuilder;
     ///
     /// # let universe = mpi::initialize().ok_or("MPI was already initialized (or finalized) in this process")?;
     /// # let comm = universe.world();
@@ -56,7 +56,7 @@ hypre_solver! {
     ///     .tol(1e-10)
     ///     .max_iters(100usize)
     ///     .build()?;
-    /// let solver = Solver::AMG(ctx.amg_solver(&comm, config)?);
+    /// let solver = ctx.amg_solver(&comm, config)?;
     /// let status = solver.solve(&a, &b, &mut x)?;
     /// assert!(status.converged);
     /// # drop((solver, a, b, x));

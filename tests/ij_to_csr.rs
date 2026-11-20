@@ -2,7 +2,7 @@
 //! stay valid once the IJMatrix is consumed, and be destroyed exactly once.
 
 use hypre_rs::matrix::{CSRMatrix, IJMatrix, SymmetricMatrix};
-use hypre_rs::solvers::{PCGSolver, SymmetricLinearSolver};
+use hypre_rs::solvers::PCGSolver;
 use hypre_rs::vector::IJVector;
 use mpi::topology::Communicator;
 

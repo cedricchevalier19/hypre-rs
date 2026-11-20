@@ -16,7 +16,6 @@ use std::ptr::null_mut;
 ///
 /// ```compile_fail
 /// # fn main() -> Result<(), Box<dyn std::error::Error>> {
-/// use hypre_rs::solvers::{LinearSolver, Solver};
 /// # let universe = mpi::initialize().ok_or("MPI was already initialized (or finalized) in this process")?;
 /// # let comm = universe.world();
 /// # let ctx = hypre_rs::initialize(&universe)?;
@@ -25,7 +24,7 @@ use std::ptr::null_mut;
 /// let a = a.assemble()?;
 /// let b = ctx.ij_vector(&comm, 0..1)?.assemble()?;
 /// let mut x = ctx.ij_vector(&comm, 0..1)?;
-/// let solver = Solver::GMRES(ctx.gmres_solver(&comm, Default::default())?);
+/// let solver = ctx.gmres_solver(&comm, Default::default())?;
 /// solver.solve(&a, &b, &mut x)?; // `x` is not assembled
 /// # Ok(())
 /// # }

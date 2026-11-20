@@ -260,7 +260,6 @@ impl<'h> IJMatrix<'h> {
     ///
     /// ```compile_fail
     /// # fn main() -> Result<(), Box<dyn std::error::Error>> {
-    /// use hypre_rs::solvers::{LinearSolver, Solver};
     /// # let universe = mpi::initialize().ok_or("MPI was already initialized (or finalized) in this process")?;
     /// # let comm = universe.world();
     /// # let ctx = hypre_rs::initialize(&universe)?;
@@ -268,7 +267,7 @@ impl<'h> IJMatrix<'h> {
     /// a.add_elements([(0u32, 0u32, 1.0)].into_iter())?;
     /// let b = ctx.ij_vector(&comm, 0..1)?;
     /// let mut x = ctx.ij_vector(&comm, 0..1)?;
-    /// let solver = Solver::GMRES(ctx.gmres_solver(&comm, Default::default())?);
+    /// let solver = ctx.gmres_solver(&comm, Default::default())?;
     /// solver.solve(&a, &b, &mut x)?; // `a` is not assembled
     /// # Ok(())
     /// # }

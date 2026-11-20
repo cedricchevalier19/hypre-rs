@@ -19,7 +19,7 @@
 //! # fn main() -> Result<(), Box<dyn std::error::Error>> {
 //! # use mpi::topology::Communicator;
 //! use hypre_rs::preconditioners::SymmetricAMGPreconditionerConfigBuilder;
-//! use hypre_rs::solvers::{PCGSolverConfigBuilder, SymmetricLinearSolver, SymmetricSolver};
+//! use hypre_rs::solvers::PCGSolverConfigBuilder;
 //!
 //! # let universe = mpi::initialize().ok_or("MPI was already initialized (or finalized) in this process")?;
 //! # let comm = universe.world();
@@ -43,10 +43,10 @@
 //! let amg = ctx.symmetric_amg_preconditioner(&comm, Default::default())?;
 //! let config = PCGSolverConfigBuilder::default().tol(1e-10).build()?;
 //! let solver = ctx.pcg_solver(&comm, config)?.with_preconditioner(amg)?;
-//! let status = SymmetricSolver::CG(solver).solve(&a, &b, &mut x)?;
+//! let status = solver.solve(&a, &b, &mut x)?;
 //! assert!(status.converged);
 //! assert!(status.num_iters < 10);
-//! # drop((a, b, x));
+//! # drop((solver, a, b, x));
 //! # ctx.finalize()?;
 //! # Ok(())
 //! # }

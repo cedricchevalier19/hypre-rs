@@ -12,7 +12,7 @@
 //! extern crate hypre_rs;
 //! # use mpi::initialize;
 //! # use mpi::topology::Communicator;
-//! use hypre_rs::solvers::{PCGSolverConfigBuilder, SymmetricLinearSolver, SymmetricSolver};
+//! use hypre_rs::solvers::PCGSolverConfigBuilder;
 //!
 //! let universe = mpi::initialize().ok_or("MPI was already initialized (or finalized) in this process")?;
 //! let mpi_comm = universe.world();
@@ -45,7 +45,7 @@
 //!             .build()?;
 //!
 //! // Create new CG solver with previous parameters
-//! let solver = SymmetricSolver::CG(ctx.pcg_solver(&mpi_comm, my_parameters)?);
+//! let solver = ctx.pcg_solver(&mpi_comm, my_parameters)?;
 //!
 //! let info = solver.solve(&matrix, &rhs, &mut x)?;
 //! println!("Solver has converged: {}", info);

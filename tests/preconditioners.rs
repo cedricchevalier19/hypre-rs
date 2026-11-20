@@ -7,8 +7,8 @@ use hypre_rs::preconditioners::{
 };
 use hypre_rs::solvers::{
     BiCGSTABSolverConfigBuilder, COGMRESSolverConfigBuilder, FlexGMRESSolverConfigBuilder,
-    GMRESSolverConfigBuilder, IterativeSolverStatus, LGMRESSolverConfigBuilder, LinearSolver,
-    PCGSolverConfigBuilder, Solver, SymmetricLinearSolver, SymmetricSolver,
+    GMRESSolverConfigBuilder, IterativeSolverStatus, LGMRESSolverConfigBuilder,
+    PCGSolverConfigBuilder, Solver,
 };
 use hypre_rs::vector::ParVector;
 use hypre_rs::{HypreContext, HypreError, SymmetricMatrix};
@@ -62,7 +62,6 @@ fn cg(
     if let Some(p) = preconditioner {
         solver = solver.with_preconditioner(p)?;
     }
-    let solver = SymmetricSolver::CG(solver);
     let b = vector(ctx, comm, rows.clone(), |i| {
         if i == 0 || i == N - 1 {
             1.0
@@ -85,60 +84,55 @@ fn general_solvers<'a>(
 ) -> Result<Vec<Solver<'a>>, HypreError> {
     let (tol, max_iters) = (1e-12, 10 * N as usize);
     Ok(vec![
-        Solver::GMRES(
-            ctx.gmres_solver(
-                comm,
-                GMRESSolverConfigBuilder::default()
-                    .tol(tol)
-                    .max_iters(max_iters)
-                    .k_dim(20usize)
-                    .build()?,
-            )?
-            .with_preconditioner(make()?)?,
-        ),
-        Solver::FlexGMRES(
-            ctx.flex_gmres_solver(
-                comm,
-                FlexGMRESSolverConfigBuilder::default()
-                    .tol(tol)
-                    .max_iters(max_iters)
-                    .k_dim(20usize)
-                    .build()?,
-            )?
-            .with_preconditioner(make()?)?,
-        ),
-        Solver::LGMRES(
-            ctx.lgmres_solver(
-                comm,
-                LGMRESSolverConfigBuilder::default()
-                    .tol(tol)
-                    .max_iters(max_iters)
-                    .k_dim(20usize)
-                    .build()?,
-            )?
-            .with_preconditioner(make()?)?,
-        ),
-        Solver::COGMRES(
-            ctx.cogmres_solver(
-                comm,
-                COGMRESSolverConfigBuilder::default()
-                    .tol(tol)
-                    .max_iters(max_iters)
-                    .k_dim(20usize)
-                    .build()?,
-            )?
-            .with_preconditioner(make()?)?,
-        ),
-        Solver::BiCGSTAB(
-            ctx.bicgstab_solver(
-                comm,
-                BiCGSTABSolverConfigBuilder::default()
-                    .tol(tol)
-                    .max_iters(max_iters)
-                    .build()?,
-            )?
-            .with_preconditioner(make()?)?,
-        ),
+        ctx.gmres_solver(
+            comm,
+            GMRESSolverConfigBuilder::default()
+                .tol(tol)
+                .max_iters(max_iters)
+                .k_dim(20usize)
+                .build()?,
+        )?
+        .with_preconditioner(make()?)?
+        .into(),
+        ctx.flex_gmres_solver(
+            comm,
+            FlexGMRESSolverConfigBuilder::default()
+                .tol(tol)
+                .max_iters(max_iters)
+                .k_dim(20usize)
+                .build()?,
+        )?
+        .with_preconditioner(make()?)?
+        .into(),
+        ctx.lgmres_solver(
+            comm,
+            LGMRESSolverConfigBuilder::default()
+                .tol(tol)
+                .max_iters(max_iters)
+                .k_dim(20usize)
+                .build()?,
+        )?
+        .with_preconditioner(make()?)?
+        .into(),
+        ctx.cogmres_solver(
+            comm,
+            COGMRESSolverConfigBuilder::default()
+                .tol(tol)
+                .max_iters(max_iters)
+                .k_dim(20usize)
+                .build()?,
+        )?
+        .with_preconditioner(make()?)?
+        .into(),
+        ctx.bicgstab_solver(
+            comm,
+            BiCGSTABSolverConfigBuilder::default()
+                .tol(tol)
+                .max_iters(max_iters)
+                .build()?,
+        )?
+        .with_preconditioner(make()?)?
+        .into(),
     ])
 }
 

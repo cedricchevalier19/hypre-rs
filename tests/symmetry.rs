@@ -3,7 +3,7 @@
 //! ranks.
 
 use hypre_rs::matrix::{CSRMatrix, IJMatrix};
-use hypre_rs::solvers::{PCGSolverConfigBuilder, SymmetricLinearSolver, SymmetricSolver};
+use hypre_rs::solvers::PCGSolverConfigBuilder;
 use hypre_rs::{HypreContext, HypreError, Matrix, SymmetricMatrix};
 use mpi::topology::{Communicator, SimpleCommunicator};
 use std::ops::Range;
@@ -65,7 +65,7 @@ fn symmetry_check() -> Result<(), Box<dyn std::error::Error>> {
             .max_iters(N as usize)
             .two_norm(true)
             .build()?;
-        let solver = SymmetricSolver::CG(ctx.pcg_solver(&comm, config)?);
+        let solver = ctx.pcg_solver(&comm, config)?;
         let status = solver.solve(&a, &b, &mut x)?;
         assert!(status.converged, "{status}");
         for (i, v) in rows.clone().zip(x.get_values(rows.clone())?) {

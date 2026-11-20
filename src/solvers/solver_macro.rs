@@ -44,8 +44,9 @@ impl FromHypre<HYPRE_Int> for bool {
 ///   solver trait; `MatrixType` is written in terms of the generic matrix
 ///   `M` of `solve`: `M` for [LinearSolver](crate::solvers::LinearSolver),
 ///   `SymmetricMatrix<M>` for
-///   [SymmetricLinearSolver](crate::solvers::SymmetricLinearSolver).
-///   Preconditioners leave it out,
+///   [SymmetricLinearSolver](crate::solvers::SymmetricLinearSolver), and the
+///   same `solve` as an inherent method, so calling it needs no trait
+///   import. Preconditioners leave it out,
 /// - with `precond SetPrecond, PreconditionerType`, an owned preconditioner
 ///   (`with_preconditioner`, `preconditioner`), set with hypre's
 ///   `SetPrecond` function.
@@ -191,8 +192,18 @@ macro_rules! hypre_solver {
         }
 
         $(
-        impl $Trait for $Solver<'_> {
-            fn solve<M: $crate::Matrix + ?Sized>(
+        impl $Solver<'_> {
+            /// Solves `mat * x = rhs`, starting from the current value of `x`.
+            ///
+            /// Collective: every MPI rank of the matrix must call it. Same as
+            #[doc = concat!("[", stringify!($Trait), "::solve], without importing the trait.")]
+            ///
+            /// # Errors
+            ///
+            /// [HypreError::HypreConvError] if the solver did not converge
+            /// within its maximum number of iterations, or another error
+            /// returned by hypre.
+            pub fn solve<M: $crate::Matrix + ?Sized>(
                 &self,
                 mat: &$MatTy,
                 rhs: &$crate::vector::ParVector<'_>,
@@ -219,6 +230,18 @@ macro_rules! hypre_solver {
                         converged: converged != 0,
                     })
                 }
+            }
+        }
+
+        impl $Trait for $Solver<'_> {
+            fn solve<M: $crate::Matrix + ?Sized>(
+                &self,
+                mat: &$MatTy,
+                rhs: &$crate::vector::ParVector<'_>,
+                x: &mut $crate::vector::ParVector<'_>,
+            ) -> HypreResult<IterativeSolverStatus> {
+                // The inherent method takes precedence over this one.
+                $Solver::solve(self, mat, rhs, x)
             }
         }
         )?

@@ -1,6 +1,6 @@
 //! The algebraic multigrid solver (BoomerAMG), on any number of MPI ranks.
 
-use hypre_rs::solvers::{AMGSolver, AMGSolverConfigBuilder, LinearSolver, Solver};
+use hypre_rs::solvers::{AMGSolver, AMGSolverConfigBuilder};
 use hypre_rs::vector::ParVector;
 use hypre_rs::{HypreContext, HypreError, Matrix};
 use mpi::topology::{Communicator, SimpleCommunicator};
@@ -27,7 +27,7 @@ fn check_solution(
     ctx: &HypreContext<'_>,
     comm: &SimpleCommunicator,
     rows: Range<u32>,
-    solver: &Solver<'_>,
+    solver: &AMGSolver<'_>,
     a: &(impl Matrix + ?Sized),
     b: &ParVector<'_>,
 ) -> Result<(), Box<dyn std::error::Error>> {
@@ -76,7 +76,7 @@ fn amg_solver() -> Result<(), Box<dyn std::error::Error>> {
         ];
         for mut config in configs {
             let config = config.tol(1e-10).max_iters(100usize).build()?;
-            let solver = Solver::AMG(ctx.amg_solver(&comm, config)?);
+            let solver = ctx.amg_solver(&comm, config)?;
             check_solution(&ctx, &comm, rows.clone(), &solver, &a, &b)?;
         }
 
@@ -85,7 +85,7 @@ fn amg_solver() -> Result<(), Box<dyn std::error::Error>> {
             .tol(1e-10)
             .max_iters(1usize)
             .build()?;
-        let solver = Solver::AMG(ctx.amg_solver(&comm, config)?);
+        let solver = ctx.amg_solver(&comm, config)?;
         let mut x = ctx.ij_vector(&comm, rows.clone())?.assemble()?;
         assert!(matches!(
             solver.solve(&a, &b, &mut x),

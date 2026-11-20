@@ -3,7 +3,7 @@
 
 use hypre_rs::solvers::{
     BiCGSTABSolverConfigBuilder, COGMRESSolverConfigBuilder, FlexGMRESSolverConfigBuilder,
-    GMRESSolverConfigBuilder, LGMRESSolverConfigBuilder, LinearSolver, Solver,
+    GMRESSolverConfigBuilder, LGMRESSolverConfigBuilder, Solver,
 };
 use hypre_rs::vector::ParVector;
 use hypre_rs::{HypreContext, HypreError, Matrix};
@@ -31,54 +31,49 @@ fn solvers<'a>(
     max_iters: usize,
 ) -> Result<Vec<Solver<'a>>, HypreError> {
     Ok(vec![
-        Solver::GMRES(
-            ctx.gmres_solver(
-                comm,
-                GMRESSolverConfigBuilder::default()
-                    .tol(tol)
-                    .max_iters(max_iters)
-                    .k_dim(10usize)
-                    .build()?,
-            )?,
-        ),
-        Solver::FlexGMRES(
-            ctx.flex_gmres_solver(
-                comm,
-                FlexGMRESSolverConfigBuilder::default()
-                    .tol(tol)
-                    .max_iters(max_iters)
-                    .build()?,
-            )?,
-        ),
-        Solver::LGMRES(
-            ctx.lgmres_solver(
-                comm,
-                LGMRESSolverConfigBuilder::default()
-                    .tol(tol)
-                    .max_iters(max_iters)
-                    .k_dim(10usize)
-                    .aug_dim(2usize)
-                    .build()?,
-            )?,
-        ),
-        Solver::COGMRES(
-            ctx.cogmres_solver(
-                comm,
-                COGMRESSolverConfigBuilder::default()
-                    .tol(tol)
-                    .max_iters(max_iters)
-                    .build()?,
-            )?,
-        ),
-        Solver::BiCGSTAB(
-            ctx.bicgstab_solver(
-                comm,
-                BiCGSTABSolverConfigBuilder::default()
-                    .tol(tol)
-                    .max_iters(max_iters)
-                    .build()?,
-            )?,
-        ),
+        ctx.gmres_solver(
+            comm,
+            GMRESSolverConfigBuilder::default()
+                .tol(tol)
+                .max_iters(max_iters)
+                .k_dim(10usize)
+                .build()?,
+        )?
+        .into(),
+        ctx.flex_gmres_solver(
+            comm,
+            FlexGMRESSolverConfigBuilder::default()
+                .tol(tol)
+                .max_iters(max_iters)
+                .build()?,
+        )?
+        .into(),
+        ctx.lgmres_solver(
+            comm,
+            LGMRESSolverConfigBuilder::default()
+                .tol(tol)
+                .max_iters(max_iters)
+                .k_dim(10usize)
+                .aug_dim(2usize)
+                .build()?,
+        )?
+        .into(),
+        ctx.cogmres_solver(
+            comm,
+            COGMRESSolverConfigBuilder::default()
+                .tol(tol)
+                .max_iters(max_iters)
+                .build()?,
+        )?
+        .into(),
+        ctx.bicgstab_solver(
+            comm,
+            BiCGSTABSolverConfigBuilder::default()
+                .tol(tol)
+                .max_iters(max_iters)
+                .build()?,
+        )?
+        .into(),
     ])
 }
 
@@ -163,16 +158,16 @@ fn krylov_solvers() -> Result<(), Box<dyn std::error::Error>> {
                 .map(|i| (i, if i == 0 || i == N - 1 { 1.0 } else { 0.0 })),
         )?;
         let b = b.assemble()?;
-        let gmres = Solver::GMRES(
-            ctx.gmres_solver(
+        let gmres: Solver<'_> = ctx
+            .gmres_solver(
                 &comm,
                 GMRESSolverConfigBuilder::default()
                     // Without restarts, GMRES converges in at most N iterations.
                     .k_dim(N as usize)
                     .tol(1e-12)
                     .build()?,
-            )?,
-        );
+            )?
+            .into();
         check_solution(&ctx, &comm, rows.clone(), &gmres, &s, &b)?;
     }
     // hypre objects must be dropped before hypre is finalized (checked by the compiler)

@@ -78,12 +78,15 @@ pub trait LinearSolver {
 
 /// Solvers for general matrices, chosen at runtime.
 ///
+/// Only needed when the solver is chosen at runtime: every solver has its own
+/// `solve` method. Each solver type converts into its variant with `into()`.
+///
 /// # Example
 ///
 /// ```
 /// # fn main() -> Result<(), Box<dyn std::error::Error>> {
 /// # use mpi::topology::Communicator;
-/// use hypre_rs::solvers::{GMRESSolverConfigBuilder, LinearSolver, Solver};
+/// use hypre_rs::solvers::{GMRESSolverConfigBuilder, Solver};
 /// # let universe = mpi::initialize().ok_or("MPI was already initialized (or finalized) in this process")?;
 /// # let comm = universe.world();
 /// # let ctx = hypre_rs::initialize(&universe)?;
@@ -101,8 +104,14 @@ pub trait LinearSolver {
 /// let b = b.assemble()?;
 /// let mut x = ctx.ij_vector(&comm, rows)?.assemble()?;
 ///
-/// let config = GMRESSolverConfigBuilder::default().tol(1e-10).build()?;
-/// let solver = Solver::GMRES(ctx.gmres_solver(&comm, config)?);
+/// // For example from a configuration file.
+/// let use_bicgstab = false;
+/// let solver: Solver<'_> = if use_bicgstab {
+///     ctx.bicgstab_solver(&comm, Default::default())?.into()
+/// } else {
+///     let config = GMRESSolverConfigBuilder::default().tol(1e-10).build()?;
+///     ctx.gmres_solver(&comm, config)?.into()
+/// };
 /// let status = solver.solve(&a, &b, &mut x)?;
 /// assert!(status.converged);
 /// # drop((solver, a, b, x));
@@ -128,6 +137,23 @@ pub enum Solver<'h> {
     AMG(AMGSolver<'h>),
 }
 
+impl Solver<'_> {
+    /// Solves `mat * x = rhs` with the chosen solver; same as
+    /// [LinearSolver::solve], without importing the trait.
+    ///
+    /// # Errors
+    ///
+    /// See [LinearSolver::solve].
+    pub fn solve<M: Matrix + ?Sized>(
+        &self,
+        mat: &M,
+        rhs: &ParVector<'_>,
+        x: &mut ParVector<'_>,
+    ) -> HypreResult<IterativeSolverStatus> {
+        LinearSolver::solve(self, mat, rhs, x)
+    }
+}
+
 /// Solver for linear systems whose matrix is symmetric.
 #[enum_dispatch]
 pub trait SymmetricLinearSolver {
@@ -143,9 +169,29 @@ pub trait SymmetricLinearSolver {
 }
 
 /// Solvers for symmetric matrices, chosen at runtime.
+///
+/// Only needed when the solver is chosen at runtime: every solver has its own
+/// `solve` method. Each solver type converts into its variant with `into()`.
 #[enum_dispatch(SymmetricLinearSolver)]
 #[derive(Debug)]
 pub enum SymmetricSolver<'h> {
     /// Conjugate Gradient, for symmetric positive definite matrices.
     CG(PCGSolver<'h>),
+}
+
+impl SymmetricSolver<'_> {
+    /// Solves `mat * x = rhs` with the chosen solver; same as
+    /// [SymmetricLinearSolver::solve], without importing the trait.
+    ///
+    /// # Errors
+    ///
+    /// See [SymmetricLinearSolver::solve].
+    pub fn solve<M: Matrix + ?Sized>(
+        &self,
+        mat: &SymmetricMatrix<M>,
+        rhs: &ParVector<'_>,
+        x: &mut ParVector<'_>,
+    ) -> HypreResult<IterativeSolverStatus> {
+        SymmetricLinearSolver::solve(self, mat, rhs, x)
+    }
 }
