@@ -2,8 +2,7 @@
 //! values of the solution, not just that the solver converged.
 
 use hypre_rs::solvers::PCGSolverConfigBuilder;
-use hypre_rs::HypreError;
-use mpi::topology::Communicator;
+use hypre_rs::{HypreError, ParVector};
 
 /// Global number of rows; not a multiple of 2 or 3, so ranks get uneven rows.
 const N: u32 = 100;
@@ -16,8 +15,7 @@ fn laplacian_solution_values() -> Result<(), Box<dyn std::error::Error>> {
     let comm = universe.world();
     let ctx = hypre_rs::initialize(&universe)?;
     {
-        let (rank, size) = (comm.rank() as u32, comm.size() as u32);
-        let rows = (rank * N / size)..((rank + 1) * N / size);
+        let rows = hypre_rs::distribute_rows(&comm, N);
 
         // tridiag(-1, 2, -1): A * [1, ..., 1] = [1, 0, ..., 0, 1].
         // Only the lower triangle is given; the super-diagonal comes from
@@ -31,7 +29,7 @@ fn laplacian_solution_values() -> Result<(), Box<dyn std::error::Error>> {
             }
             entries.push((i, i, 2.0));
         }
-        a.add_elements(entries.into_iter())?;
+        a.add_elements(entries)?;
         let a = a.assemble()?;
 
         let mut b = ctx.ij_vector(&comm, rows.clone())?;
@@ -41,14 +39,12 @@ fn laplacian_solution_values() -> Result<(), Box<dyn std::error::Error>> {
         )?;
         let b = b.assemble()?;
 
-        let mut x = ctx.ij_vector(&comm, rows.clone())?;
-        x.add_elements(rows.clone().map(|i| (i, 0.0)))?;
-        let mut x = x.assemble()?;
+        let mut x = ParVector::zeros(&ctx, &comm, rows.clone())?;
 
         // Too few iterations: hypre reports a convergence error.
         let config = PCGSolverConfigBuilder::default()
             .tol(1e-12)
-            .max_iters(1usize)
+            .max_iters(1)
             .build()?;
         let solver = ctx.pcg_solver(&comm, config)?;
         assert!(matches!(
@@ -67,7 +63,7 @@ fn laplacian_solution_values() -> Result<(), Box<dyn std::error::Error>> {
         let status = solver.solve(&a, &b, &mut x)?;
         assert!(status.converged, "{status}");
 
-        let values = x.get_values(rows.clone())?;
+        let values = x.local_values()?;
         assert_eq!(values.len(), rows.len());
         for (i, v) in rows.zip(values) {
             assert!((v - 1.0).abs() < 1e-8, "x[{i}] = {v}, expected 1");

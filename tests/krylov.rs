@@ -7,7 +7,7 @@ use hypre_rs::solvers::{
 };
 use hypre_rs::vector::ParVector;
 use hypre_rs::{HypreContext, HypreError, Matrix};
-use mpi::topology::{Communicator, SimpleCommunicator};
+use mpi::topology::SimpleCommunicator;
 use std::ops::Range;
 
 /// Global number of rows; not a multiple of 2 or 3, so ranks get uneven rows.
@@ -36,7 +36,7 @@ fn solvers<'a>(
             GMRESSolverConfigBuilder::default()
                 .tol(tol)
                 .max_iters(max_iters)
-                .k_dim(10usize)
+                .k_dim(10)
                 .build()?,
         )?
         .into(),
@@ -53,8 +53,8 @@ fn solvers<'a>(
             LGMRESSolverConfigBuilder::default()
                 .tol(tol)
                 .max_iters(max_iters)
-                .k_dim(10usize)
-                .aug_dim(2usize)
+                .k_dim(10)
+                .aug_dim(2)
                 .build()?,
         )?
         .into(),
@@ -86,12 +86,10 @@ fn check_solution(
     a: &(impl Matrix + ?Sized),
     b: &ParVector<'_>,
 ) -> Result<(), Box<dyn std::error::Error>> {
-    let mut x = ctx.ij_vector(comm, rows.clone())?;
-    x.add_elements(rows.clone().map(|i| (i, 0.0)))?;
-    let mut x = x.assemble()?;
+    let mut x = ParVector::zeros(ctx, comm, rows.clone())?;
     let status = solver.solve(a, b, &mut x)?;
     assert!(status.converged, "{solver:?}: {status}");
-    for (i, v) in rows.clone().zip(x.get_values(rows)?) {
+    for (i, v) in rows.zip(x.local_values()?) {
         assert!(
             (v - 1.0).abs() < 1e-6,
             "{solver:?}: x[{i}] = {v}, expected 1"
@@ -108,25 +106,22 @@ fn krylov_solvers() -> Result<(), Box<dyn std::error::Error>> {
     let comm = universe.world();
     let ctx = hypre_rs::initialize(&universe)?;
     {
-        let (rank, size) = (comm.rank() as u32, comm.size() as u32);
-        let rows = (rank * N / size)..((rank + 1) * N / size);
+        let rows = hypre_rs::distribute_rows(&comm, N);
 
         let mut ij = ctx.ij_matrix(&comm, rows.clone(), rows.clone())?;
         for i in rows.clone() {
-            ij.add_elements([(i, i, 2.0)].into_iter())?;
+            ij.add_elements([(i, i, 2.0)])?;
             if i > 0 {
-                ij.add_elements([(i, i - 1, LOWER)].into_iter())?;
+                ij.add_elements([(i, i - 1, LOWER)])?;
             }
             if i + 1 < N {
-                ij.add_elements([(i, i + 1, UPPER)].into_iter())?;
+                ij.add_elements([(i, i + 1, UPPER)])?;
             }
         }
         let a = ij.assemble()?;
         assert!(!a.is_symmetric(0.0)?);
 
-        let mut b = ctx.ij_vector(&comm, rows.clone())?;
-        b.add_elements(rows.clone().map(|i| (i, row_sum(i))))?;
-        let b = b.assemble()?;
+        let b = ParVector::from_fn(&ctx, &comm, rows.clone(), row_sum)?;
 
         // Every solver finds the exact solution.
         for solver in solvers(&ctx, &comm, 1e-12, 10 * N as usize)? {
@@ -135,7 +130,7 @@ fn krylov_solvers() -> Result<(), Box<dyn std::error::Error>> {
 
         // Too few iterations: hypre reports a convergence error.
         for solver in solvers(&ctx, &comm, 1e-12, 1)? {
-            let mut x = ctx.ij_vector(&comm, rows.clone())?.assemble()?;
+            let mut x = ParVector::zeros(&ctx, &comm, rows.clone())?;
             assert!(
                 matches!(
                     solver.solve(&a, &b, &mut x),

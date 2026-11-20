@@ -85,13 +85,12 @@ pub trait LinearSolver {
 ///
 /// ```
 /// # fn main() -> Result<(), Box<dyn std::error::Error>> {
-/// # use mpi::topology::Communicator;
 /// use hypre_rs::solvers::{GMRESSolverConfigBuilder, Solver};
+/// use hypre_rs::ParVector;
 /// # let universe = mpi::initialize().ok_or("MPI was already initialized (or finalized) in this process")?;
 /// # let comm = universe.world();
 /// # let ctx = hypre_rs::initialize(&universe)?;
-/// # let (rank, size) = (comm.rank() as u32, comm.size() as u32);
-/// let rows = (rank * 10 / size)..((rank + 1) * 10 / size);
+/// let rows = hypre_rs::distribute_rows(&comm, 10);
 /// // Upper bidiagonal, not symmetric: 2 on the diagonal, -1 above.
 /// let mut a = ctx.ij_matrix(&comm, rows.clone(), rows.clone())?;
 /// a.add_elements(rows.clone().map(|i| (i, i, 2.0)))?;
@@ -99,10 +98,8 @@ pub trait LinearSolver {
 /// let a = a.assemble()?;
 ///
 /// // b = A * [1, ..., 1]
-/// let mut b = ctx.ij_vector(&comm, rows.clone())?;
-/// b.add_elements(rows.clone().map(|i| (i, if i < 9 { 1.0 } else { 2.0 })))?;
-/// let b = b.assemble()?;
-/// let mut x = ctx.ij_vector(&comm, rows)?.assemble()?;
+/// let b = ParVector::from_fn(&ctx, &comm, rows.clone(), |i| if i < 9 { 1.0 } else { 2.0 })?;
+/// let mut x = ParVector::zeros(&ctx, &comm, rows)?;
 ///
 /// // For example from a configuration file.
 /// let use_bicgstab = false;

@@ -26,7 +26,7 @@ hypre_solver! {
     /// # let ctx = hypre_rs::initialize(&universe)?;
     /// let config = GMRESSolverConfigBuilder::default()
     ///     .tol(1e-8)
-    ///     .k_dim(30usize)
+    ///     .k_dim(30)
     ///     .build()?;
     /// let solver = GMRESSolver::new(&ctx, &comm, config)?;
     /// assert_eq!(solver.current_config()?.k_dim, Some(30));

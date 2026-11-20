@@ -3,7 +3,7 @@
 use hypre_rs::solvers::{AMGSolver, AMGSolverConfigBuilder};
 use hypre_rs::vector::ParVector;
 use hypre_rs::{HypreContext, HypreError, Matrix};
-use mpi::topology::{Communicator, SimpleCommunicator};
+use mpi::topology::SimpleCommunicator;
 use std::ops::Range;
 
 /// Global number of rows; not a multiple of 2 or 3, so ranks get uneven rows.
@@ -16,9 +16,13 @@ fn rhs<'a>(
     comm: &'a SimpleCommunicator,
     rows: Range<u32>,
 ) -> Result<ParVector<'a>, HypreError> {
-    let mut b = ctx.ij_vector(comm, rows.clone())?;
-    b.add_elements(rows.map(|i| (i, if i == 0 || i == N - 1 { 1.0 } else { 0.0 })))?;
-    let b = b.assemble()?;
+    let b = ParVector::from_fn(ctx, comm, rows.clone(), |i| {
+        if i == 0 || i == N - 1 {
+            1.0
+        } else {
+            0.0
+        }
+    })?;
     Ok(b)
 }
 
@@ -31,13 +35,11 @@ fn check_solution(
     a: &(impl Matrix + ?Sized),
     b: &ParVector<'_>,
 ) -> Result<(), Box<dyn std::error::Error>> {
-    let mut x = ctx.ij_vector(comm, rows.clone())?;
-    x.add_elements(rows.clone().map(|i| (i, 0.0)))?;
-    let mut x = x.assemble()?;
+    let mut x = ParVector::zeros(ctx, comm, rows.clone())?;
     let status = solver.solve(a, b, &mut x)?;
     assert!(status.converged, "{status}");
     assert!(status.res_num <= 1e-10, "{status}");
-    for (i, v) in rows.clone().zip(x.get_values(rows)?) {
+    for (i, v) in rows.zip(x.local_values()?) {
         assert!((v - 1.0).abs() < 1e-6, "x[{i}] = {v}, expected 1");
     }
     Ok(())
@@ -51,8 +53,7 @@ fn amg_solver() -> Result<(), Box<dyn std::error::Error>> {
     let comm = universe.world();
     let ctx = hypre_rs::initialize(&universe)?;
     {
-        let (rank, size) = (comm.rank() as u32, comm.size() as u32);
-        let rows = (rank * N / size)..((rank + 1) * N / size);
+        let rows = hypre_rs::distribute_rows(&comm, N);
 
         // The 1D Laplacian, as a SymmetricMatrix: every solver accepts it.
         let mut a = ctx.symmetric_matrix(&comm, rows.clone())?;
@@ -65,17 +66,17 @@ fn amg_solver() -> Result<(), Box<dyn std::error::Error>> {
         let configs = [
             AMGSolverConfigBuilder::default(),
             *AMGSolverConfigBuilder::default()
-                .coarsen_type(6u32) // Falgout
-                .interp_type(0u32) // classical
-                .relax_type(6u32) // symmetric hybrid Gauss-Seidel
-                .num_sweeps(2usize),
+                .coarsen_type(6) // Falgout
+                .interp_type(0) // classical
+                .relax_type(6) // symmetric hybrid Gauss-Seidel
+                .num_sweeps(2),
             *AMGSolverConfigBuilder::default()
-                .coarsen_type(8u32) // PMIS
-                .agg_num_levels(1usize)
-                .cycle_type(2u32), // W-cycle
+                .coarsen_type(8) // PMIS
+                .agg_num_levels(1)
+                .cycle_type(2), // W-cycle
         ];
         for mut config in configs {
-            let config = config.tol(1e-10).max_iters(100usize).build()?;
+            let config = config.tol(1e-10).max_iters(100).build()?;
             let solver = ctx.amg_solver(&comm, config)?;
             check_solution(&ctx, &comm, rows.clone(), &solver, &a, &b)?;
         }
@@ -83,10 +84,10 @@ fn amg_solver() -> Result<(), Box<dyn std::error::Error>> {
         // Too few cycles: hypre reports a convergence error.
         let config = AMGSolverConfigBuilder::default()
             .tol(1e-10)
-            .max_iters(1usize)
+            .max_iters(1)
             .build()?;
         let solver = ctx.amg_solver(&comm, config)?;
-        let mut x = ctx.ij_vector(&comm, rows.clone())?.assemble()?;
+        let mut x = ParVector::zeros(&ctx, &comm, rows.clone())?;
         assert!(matches!(
             solver.solve(&a, &b, &mut x),
             Err(HypreError::HypreConvError)
@@ -96,19 +97,19 @@ fn amg_solver() -> Result<(), Box<dyn std::error::Error>> {
         // Every field that hypre can read back round-trips.
         let config = AMGSolverConfigBuilder::default()
             .tol(1e-9)
-            .max_iters(42usize)
-            .max_levels(7usize)
-            .max_coarse_size(20usize)
-            .min_coarse_size(2usize)
+            .max_iters(42)
+            .max_levels(7)
+            .max_coarse_size(20)
+            .min_coarse_size(2)
             .strong_threshold(0.5)
             .max_row_sum(0.8)
             .trunc_factor(0.1)
-            .p_max_elmts(3usize)
-            .coarsen_type(8u32)
-            .cycle_type(2u32)
-            .converge_type(1u32)
-            .logging(1u32)
-            .print_level(0u32)
+            .p_max_elmts(3)
+            .coarsen_type(8)
+            .cycle_type(2)
+            .converge_type(1)
+            .logging(1)
+            .print_level(0)
             .build()?;
         let solver = AMGSolver::new(&ctx, &comm, config)?;
         let current = solver.current_config()?;
@@ -134,7 +135,7 @@ fn amg_solver() -> Result<(), Box<dyn std::error::Error>> {
         // `config` changes an existing solver; unset fields keep their value.
         let update = AMGSolverConfigBuilder::default()
             .tol(1e-3)
-            .cycle_type(1u32)
+            .cycle_type(1)
             .build()?;
         let solver = solver.config(update)?;
         let current = solver.current_config()?;

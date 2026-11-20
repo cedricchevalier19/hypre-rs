@@ -95,7 +95,9 @@ macro_rules! hypre_solver {
         /// Fields set to `None` keep hypre's default (or, for
         #[doc = concat!("[", stringify!($Solver), "::config], the current value).")]
         #[derive(Default, Debug, Clone, Builder, Copy)]
-        #[builder(setter(into, strip_option), default, derive(Debug, Copy))]
+        // No `setter(into)`: with it, a setter takes any `Into<usize>` and an
+        // integer literal such as `max_iters(500)` defaults to `i32`.
+        #[builder(setter(strip_option), default, derive(Debug, Copy))]
         #[builder(build_fn(validate = "Self::validate", error = "HypreError"))]
         pub struct $Config {
             $( $(#[$field_doc])* pub $field: Option<$ty>, )*

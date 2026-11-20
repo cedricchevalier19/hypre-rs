@@ -4,7 +4,7 @@
 use hypre_rs::matrix::{CSRMatrix, IJMatrix, SymmetricMatrix};
 use hypre_rs::solvers::PCGSolver;
 use hypre_rs::vector::IJVector;
-use mpi::topology::Communicator;
+use hypre_rs::ParVector;
 
 #[test]
 fn ij_to_csr_conversion_outlives_ij() -> Result<(), Box<dyn std::error::Error>> {
@@ -14,8 +14,8 @@ fn ij_to_csr_conversion_outlives_ij() -> Result<(), Box<dyn std::error::Error>> 
     let comm = universe.world();
     let ctx = hypre_rs::initialize(&universe)?;
     {
-        let (rank, size) = (comm.rank() as u32, comm.size() as u32);
-        let (b, e) = (rank * 10 / size, (rank + 1) * 10 / size);
+        let rows = hypre_rs::distribute_rows(&comm, 10);
+        let (b, e) = (rows.start, rows.end);
         let mut ij = IJMatrix::new(&ctx, &comm, b..e, b..e)?;
         ij.add_elements((b..e).map(|i| (i, i, 2.0f64)))?;
         // `try_from` consumes `ij`: the IJMatrix is destroyed here, while its
@@ -30,9 +30,7 @@ fn ij_to_csr_conversion_outlives_ij() -> Result<(), Box<dyn std::error::Error>> 
         // by the compiler; see the `SymmetricMatrix::assemble` doctest).
         let matrix = matrix.assemble()?;
 
-        let mut rhs = ctx.ij_vector(&comm, b..e)?;
-        rhs.add_elements((b..e).map(|i| (i, 2.0f64)))?;
-        let rhs = rhs.assemble()?;
+        let rhs = ParVector::from_fn(&ctx, &comm, b..e, |_| 2.0f64)?;
         let mut x = IJVector::new(&ctx, &comm, b..e)?;
         x.add_elements((b..e).map(|i| (i, 0.0f64)))?;
         let mut x = x.assemble()?;
@@ -41,7 +39,7 @@ fn ij_to_csr_conversion_outlives_ij() -> Result<(), Box<dyn std::error::Error>> 
         let status = solver.solve(&matrix, &rhs, &mut x)?;
         assert!(status.converged);
         // A = 2 * I and b = [2, ..., 2], so the exact solution is x = [1, ..., 1].
-        for v in x.get_values(b..e)? {
+        for v in x.local_values()? {
             assert!((v - 1.0).abs() < 1e-12, "x = {v}, expected 1");
         }
     }

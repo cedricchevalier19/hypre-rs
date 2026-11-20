@@ -46,14 +46,12 @@ static INITIALIZED: AtomicBool = AtomicBool::new(false);
 /// # Example
 ///
 /// ```
-/// # use mpi::topology::Communicator;
 /// use hypre_rs::matrix::IJMatrix;
 ///
 /// let universe = mpi::initialize().ok_or("MPI was already initialized (or finalized) in this process")?;
 /// let comm = universe.world();
 /// let ctx = hypre_rs::initialize(&universe)?;
-/// let (rank, size) = (comm.rank() as u32, comm.size() as u32);
-/// let rows = (rank * 10 / size)..((rank + 1) * 10 / size);
+/// let rows = hypre_rs::distribute_rows(&comm, 10);
 ///
 /// let matrix = ctx.ij_matrix(&comm, rows.clone(), rows.clone())?;
 /// // Same as the factory method above.
@@ -66,7 +64,6 @@ static INITIALIZED: AtomicBool = AtomicBool::new(false);
 /// Finalizing hypre while an object still uses it does not compile:
 ///
 /// ```compile_fail,E0505
-/// # use mpi::topology::Communicator;
 /// # use hypre_rs::matrix::IJMatrix;
 /// let universe = mpi::initialize().ok_or("MPI was already initialized (or finalized) in this process")?;
 /// let comm = universe.world();
@@ -80,7 +77,6 @@ static INITIALIZED: AtomicBool = AtomicBool::new(false);
 /// Nor does freeing a communicator still used by a hypre object:
 ///
 /// ```compile_fail,E0505
-/// # use mpi::topology::Communicator;
 /// let universe = mpi::initialize().ok_or("MPI was already initialized (or finalized) in this process")?;
 /// let ctx = hypre_rs::initialize(&universe)?;
 /// let comm = universe.world().duplicate();

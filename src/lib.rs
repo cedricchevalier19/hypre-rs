@@ -11,8 +11,8 @@
 //! # fn main() -> Result<(), Box<dyn std::error::Error>> {
 //! extern crate hypre_rs;
 //! # use mpi::initialize;
-//! # use mpi::topology::Communicator;
 //! use hypre_rs::solvers::PCGSolverConfigBuilder;
+//! use hypre_rs::ParVector;
 //!
 //! let universe = mpi::initialize().ok_or("MPI was already initialized (or finalized) in this process")?;
 //! let mpi_comm = universe.world();
@@ -20,8 +20,7 @@
 //! let ctx = hypre_rs::initialize(&universe)?;
 //!
 //! // Split the 12 rows between the MPI ranks
-//! let (rank, size) = (mpi_comm.rank() as u32, mpi_comm.size() as u32);
-//! let rows = (rank * 12 / size)..((rank + 1) * 12 / size);
+//! let rows = hypre_rs::distribute_rows(&mpi_comm, 12);
 //!
 //! // CG needs a symmetric matrix: give the lower triangle, the upper one
 //! // is added by symmetry. Here the 1D Laplacian tridiag(-1, 2, -1).
@@ -31,17 +30,15 @@
 //! // Solvers need an assembled matrix.
 //! let matrix = matrix.assemble()?;
 //!
-//! let mut rhs = ctx.ij_vector(&mpi_comm, rows.clone())?;
-//! rhs.add_elements(rows.clone().map(|i| (i, 1.0)))?;
-//! let rhs = rhs.assemble()?;
-//! let mut x = ctx.ij_vector(&mpi_comm, rows)?.assemble()?;
+//! let rhs = ParVector::from_fn(&ctx, &mpi_comm, rows.clone(), |_| 1.0)?;
+//! let mut x = ParVector::zeros(&ctx, &mpi_comm, rows)?;
 //!
 //! // CG solver parameters
 //! let my_parameters = PCGSolverConfigBuilder::default()
 //!             .tol(1e-9)
-//!             .max_iters(500usize)
+//!             .max_iters(500)
 //!             .two_norm(true)
-//!             .recompute_residual_period(8usize)
+//!             .recompute_residual_period(8)
 //!             .build()?;
 //!
 //! // Create new CG solver with previous parameters
@@ -78,6 +75,7 @@ pub mod vector;
 type HypreResult<T> = Result<T, error::HypreError>;
 pub use error::HypreError;
 pub use matrix::{Matrix, SymmetricMatrix};
+pub use utils::distribute_rows;
 pub use vector::{IJVector, ParVector};
 
 mod context;
