@@ -178,6 +178,13 @@ fn preconditioners() -> TestResult {
             }
             amg_configs.push(config);
         }
+        // C/F relaxation order, which keeps the cycle symmetric.
+        amg_configs.push(*SymmetricAMGPreconditionerConfigBuilder::default().relax_order(true));
+        amg_configs.push(
+            *SymmetricAMGPreconditionerConfigBuilder::default()
+                .relax_order(true)
+                .relax_type(SymmetricSmoother::HybridSymmetricGaussSeidel),
+        );
         // Two W-cycles per application.
         amg_configs.push(
             *SymmetricAMGPreconditionerConfigBuilder::default()

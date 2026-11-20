@@ -66,8 +66,10 @@ hypre_solver! {
     /// symmetric cycle, for the conjugate gradient solver.
     ///
     /// Its configuration leaves out what would make the cycle
-    /// non-symmetric: the smoother is a [SymmetricSmoother], and the
-    /// relaxation order cannot be changed. hypre's default setup is
+    /// non-symmetric: the smoother is a [SymmetricSmoother]. The C/F
+    /// relaxation order (`relax_order`) keeps the cycle symmetric: hypre
+    /// relaxes C points before F points on the way down, and F points
+    /// before C points on the way up. hypre's default setup is
     /// symmetric (ℓ1 Gauss-Seidel, forward before and backward after the
     /// coarse-grid correction). The matrix must be symmetric positive
     /// definite.
@@ -79,8 +81,9 @@ hypre_solver! {
     ///
     /// See [AMGSolverConfig](crate::solvers::AMGSolverConfig) for the
     /// meaning of the parameters. hypre has no getter for `interp_type`,
-    /// `relax_type`, `relax_wt`, `num_sweeps` and `agg_num_levels`, which
-    /// are therefore `None` in [SymmetricAMGPreconditioner::current_config].
+    /// `relax_type`, `relax_order`, `relax_wt`, `num_sweeps` and
+    /// `agg_num_levels`, which are therefore `None` in
+    /// [SymmetricAMGPreconditioner::current_config].
     config SymmetricAMGPreconditionerConfig, SymmetricAMGPreconditionerConfigBuilder;
     create create_amg_preconditioner, destroy HYPRE_BoomerAMGDestroy;
     positive [strong_threshold, max_row_sum, trunc_factor];
@@ -107,6 +110,9 @@ hypre_solver! {
         interp_type: InterpType => HYPRE_BoomerAMGSetInterpType,
         /// Smoother on every level but the coarsest
         relax_type: SymmetricSmoother => HYPRE_BoomerAMGSetRelaxType,
+        /// Relax C points before F points on the way down, and F points
+        /// before C points on the way up (`false`: lexicographic order)
+        relax_order: bool => HYPRE_BoomerAMGSetRelaxOrder,
         /// Relaxation weight of the weighted Jacobi smoother
         relax_wt: f64 => HYPRE_BoomerAMGSetRelaxWt,
         /// Number of smoother sweeps on every level
