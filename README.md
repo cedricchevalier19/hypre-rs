@@ -68,6 +68,25 @@ It works on both x86_64 and arm64 hosts, including Apple Silicon.
 
 The image sets `HYPRE_LIB_DIR` and `HYPRE_INCLUDE_DIR`, which take precedence over any `HYPRE_DIR` in `.cargo/config.toml`.
 
+## Examples
+
+The [`examples`](examples) directory has complete programs. Each runs on any
+number of MPI ranks and checks its own result:
+
+| Example | Shows |
+|---|---|
+| [`simple-cg`](examples/simple-cg.rs) | The minimal workflow: a symmetric matrix, CG, and its status |
+| [`pcg-preconditioners`](examples/pcg-preconditioners.rs) | CG on a 2D diffusion problem with a coefficient jump: no preconditioner, Jacobi, algebraic multigrid |
+| [`gmres-convection-diffusion`](examples/gmres-convection-diffusion.rs) | A non-symmetric system with GMRES and BiCGSTAB, preconditioned by Jacobi or multigrid |
+| [`amg-solver`](examples/amg-solver.rs) | Algebraic multigrid as a solver: named options, reading the configuration back, handling non-convergence and restarting |
+| [`choose-solver`](examples/choose-solver.rs) | Choosing the solver at runtime, from the command line |
+| [`check-symmetry`](examples/check-symmetry.rs) | Checking that a matrix built with both triangles is symmetric, to use CG |
+
+```bash
+cargo run --example pcg-preconditioners
+cargo build --examples && mpirun -n 4 target/debug/examples/pcg-preconditioners
+```
+
 ## License
 This project is licensed under dual MIT/Apache-2.0 license. See the [LICENSE-MIT](LICENSE-MIT) and [LICENSE-APACHE](LICENSE-APACHE) files for details.
 
